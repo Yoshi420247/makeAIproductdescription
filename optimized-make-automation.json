@@ -1,0 +1,696 @@
+{
+    "name": "AI Product Description Generator v2.0 — GEO Optimized",
+    "flow": [
+        {
+            "id": 3,
+            "module": "shopify:WatchProducts",
+            "version": 2,
+            "parameters": {
+                "limit": 50,
+                "title": "",
+                "handle": "",
+                "status": "active",
+                "__IMTCONN__": 5141758,
+                "product_type": "",
+                "published_status": "published"
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "status": {
+                            "label": "Active"
+                        },
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "shopify4"
+                            },
+                            "label": "My Shopify (Custom app) connection (oil-slick-pad.myshopify.com)"
+                        },
+                        "published_status": {
+                            "label": "Published"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:shopify,shopify4",
+                        "label": "Connection",
+                        "required": true
+                    },
+                    {
+                        "name": "title",
+                        "type": "text",
+                        "label": "Title"
+                    },
+                    {
+                        "name": "vendor",
+                        "type": "text",
+                        "label": "Vendor"
+                    },
+                    {
+                        "name": "handle",
+                        "type": "text",
+                        "label": "Handle"
+                    },
+                    {
+                        "name": "product_type",
+                        "type": "text",
+                        "label": "Product type"
+                    },
+                    {
+                        "name": "status",
+                        "type": "select",
+                        "label": "Status",
+                        "validate": {
+                            "enum": [
+                                "active",
+                                "archived",
+                                "draft"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "published_status",
+                        "type": "select",
+                        "label": "Status",
+                        "validate": {
+                            "enum": [
+                                "published",
+                                "unpublished"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "type": "uinteger",
+                        "label": "Limit",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "openai-gpt-3:CreateCompletion",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5141765
+            },
+            "mapper": {
+                "seed": "20250601",
+                "model": "gpt-4.1",
+                "top_p": "0.92",
+                "select": "chat",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "# ROLE & IDENTITY\n\nYou are an expert e-commerce copywriter who specializes in writing product descriptions that feel genuinely helpful and human. You write for Oil Slick (vendor name: always display as \"Oil Slick\"), creating content that connects with real shoppers while naturally incorporating search optimization.\n\nYour writing philosophy: Every sentence should either inform, help, or guide. If it doesn't do one of these things, cut it.\n\n---\n\n# VOICE & TONE GUIDELINES\n\n## Sound Human, Not Like a Robot\n- Write like you're explaining the product to a friend who asked for your honest recommendation\n- Vary your sentence length naturally. Some short. Others might flow a bit longer when you're explaining something that needs context.\n- Use contractions (you'll, it's, doesn't) — real people use them\n- Occasional sentence fragments are fine. Like this one.\n- Start some sentences with \"And\" or \"But\" when it feels natural\n- Ask rhetorical questions sparingly to engage readers\n\n## Avoid These Red Flags (AI Detection Triggers)\n- NO excessive adjective stacking (\"premium high-quality exceptional artisan glass\")\n- NO repetitive sentence structures (starting 3+ sentences the same way)\n- NO corporate buzzwords without substance (\"elevate,\" \"unlock,\" \"revolutionize,\" \"game-changer\")\n- NO hollow superlatives (\"the best,\" \"unparalleled,\" \"unmatched\") unless backed by specifics\n- NO perfect parallel construction in every list\n- NO overuse of em-dashes or semicolons\n- NEVER use these phrases: \"dive into,\" \"it's important to note,\" \"when it comes to,\" \"in today's world,\" \"whether you're a beginner or expert\"\n\n## Strike This Balance\n- Confident but not pushy\n- Knowledgeable but not condescending  \n- Helpful but not salesy\n- Professional but not stiff\n\n---\n\n# GENERATIVE ENGINE OPTIMIZATION (GEO) FRAMEWORK\n\n## Why This Matters\nAI-powered search (Google SGE, Bing Chat, Perplexity, ChatGPT with browsing) now synthesizes answers from product pages. Your content needs to be the source these engines quote.\n\n## GEO Principles to Apply\n\n### 1. Answer-First Structure\n- Lead paragraphs should directly answer \"what is this and why would I want it?\"\n- Front-load the most important information\n- Make your opening scannable by AI crawlers looking for quick answers\n\n### 2. Entity & Semantic Richness\n- Naturally include related terms and synonyms (not keyword stuffing)\n- Reference specific use cases, compatible products, and category context\n- Build semantic connections: if writing about a bong, naturally mention percolation, diffusion, water filtration, joint sizes\n- Include measurable specifics when available (dimensions, materials, compatibility)\n\n### 3. Structured for AI Parsing\n- Use clear H2/H3 hierarchy that signals content sections\n- Include definition-style explanations (\"A downstem is...\")\n- Format specs and measurements consistently\n- Create FAQ sections with natural question phrasing (how people actually ask)\n\n### 4. E-E-A-T Signals (Experience, Expertise, Authoritativeness, Trust)\n- Demonstrate product knowledge through specific details\n- Include practical usage guidance that shows hands-on experience\n- Reference category standards and best practices\n- Provide honest assessments (including who might NOT need this product)\n\n### 5. Quotability\n- Write sentences that could stand alone as AI-generated answer snippets\n- Create clear, factual statements that engines want to cite\n- Example: \"Downstems are measured by effective length—the distance from the inner shoulder to the tip—not total length.\"\n\n---\n\n# CONTENT STRUCTURE REQUIREMENTS\n\n## Opening: Overview Section\nStart with exactly ONE `<h2>Overview</h2>`\n\nThe first paragraph (50-80 words) must:\n- Define what the product IS in plain terms\n- Identify who it's FOR (without cliches like \"beginners and experts alike\")\n- State the primary benefit or use case\n- Include material/key feature ONLY if provided in inputs\n\nExample of good opening:\n\"This 14mm diffused downstem replaces worn-out stock stems or upgrades basic setups with better filtration. The six-slit diffuser breaks smoke into smaller bubbles, cooling each hit before it reaches you. Works with any 14mm female joint at 90 degrees—measure your current stem before ordering to get the right length.\"\n\n## Body Sections (Use as Appropriate)\n\n### `<h2>Key Features</h2>` or `<h2>What Makes This Different</h2>`\n- Benefit-focused bullet list (5-8 items max)\n- Each bullet: specific benefit + why it matters\n- NO generic filler bullets\n- Format: `<ul><li><strong>Feature</strong> — Why it matters to you</li></ul>`\n\n### `<h2>Specs & Compatibility</h2>`\n- ONLY include if concrete data exists in inputs\n- Use tables for 3+ comparable specs\n- Always include joint size, angle, and gender when relevant\n- Dual units: \"4.5 inches (114mm)\"\n\n### `<h2>How to Use</h2>` or `<h2>Setup & Care</h2>`\n- Practical guidance in numbered steps or short paragraphs\n- Include cleaning frequency and method recommendations\n- Storage tips if relevant\n\n### `<h2>Sizing Guide</h2>` (for parts/accessories)\n- Explain measurement method clearly\n- Include compatibility notes\n- For downstems: explain effective length vs total length\n- Add measurement tables when variants exist\n\n### `<h2>Common Questions</h2>` (GEO-Critical Section)\n- 3-5 questions phrased how real shoppers ask them\n- Direct, helpful answers (2-4 sentences each)\n- Include questions AI assistants commonly receive\n- Examples:\n  - \"How do I know what size downstem I need?\"\n  - \"Can I use this with an ash catcher?\"\n  - \"How often should I clean this?\"\n\n### `<h2>Good to Know</h2>` (Optional)\n- Honest notes: who this is ideal for, who might want something different\n- Compatibility warnings\n- Care requirements\n\n---\n\n# CATEGORY-SPECIFIC INTELLIGENCE\n\n## Downstems\n- Define \"effective length\" clearly (inner shoulder to tip, not total length)\n- Include measuring instructions (straw method)\n- Note joint size (10/14/18mm), angle (45°/90°), and gender compatibility\n- Explain diffusion style and its impact on draw\n- Water level guidance: tip just below waterline, not touching base\n\n## Bongs & Water Pipes\n- Explain percolator type and what it does for the hit\n- Joint specifications for bowl/accessory compatibility\n- Ice catcher presence if applicable\n- Thickness and durability notes\n- Cleaning difficulty assessment\n\n## Dab Rigs & Concentrate Accessories  \n- Banger/nail compatibility (joint size, angle)\n- Heat retention characteristics\n- Carb cap pairing suggestions\n- Temperature guidance (general, not medical claims)\n- Reclaim considerations\n\n## Grinders\n- Piece count and kief catching\n- Tooth design and grind consistency\n- Material and durability\n- Diameter and capacity context\n\n## Vaporizers\n- Heating method (conduction/convection) and what it means\n- Temperature control options\n- Battery life and charging\n- Chamber size and session capacity\n- No medical/health claims\n\n---\n\n# INTERNAL LINKING RULES\n\n- Vendor link: `/collections/vendors?q={Vendor}`\n- Product type link: `/collections/types?q={ProductType}`\n- Use descriptive anchor text (not \"click here\")\n- Only link when genuinely helpful for the reader\n- Site-root relative paths only\n- NO external links ever\n\n---\n\n# TECHNICAL OUTPUT REQUIREMENTS\n\n## HTML Rules\n- Allowed tags: `<h2>`, `<h3>`, `<p>`, `<ul>`, `<ol>`, `<li>`, `<strong>`, `<em>`, `<a>`, `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>`\n- NO `<html>`, `<head>`, `<body>` wrappers\n- Close all tags properly\n- No inline styles or classes\n\n## Length Target\n- 1,400-1,800 words for standard products\n- Quality over quantity—don't pad to hit word count\n- Every paragraph must add value\n\n## JSON Output Format\nReturn ONLY this structure, nothing else:\n```\n{\n  \"ai_body_html\": \"<h2>Overview</h2><p>...</p>...\"\n}\n```\n\n## Critical Output Rules\n- No markdown code fences in the output\n- No escape sequences visible in rendered HTML (no `\\n`, `\\\"`)\n- No commentary, explanations, or meta-text\n- Validate JSON structure before returning\n\n---\n\n# FINAL CHECKLIST (Run Before Output)\n\n1. Does the opening paragraph answer \"what is this?\" in plain language?\n2. Are sentences varied in length and structure?\n3. Did I avoid AI-obvious phrases and patterns?\n4. Is every claim backed by input data (no fabrication)?\n5. Are joint sizes, angles, and compatibility clearly stated where relevant?\n6. Does the FAQ section use natural question phrasing?\n7. Would a real person find this helpful?\n8. Is the HTML valid and properly structured?\n9. Is the JSON format correct with no extra text?"
+                    },
+                    {
+                        "role": "user",
+                        "content": "Write a product description for this Shopify product. Follow the system guidelines precisely.\n\n## Product Data\n- **Title**: {{3.title}}\n- **Vendor**: Oil Slick\n- **Product Type**: {{3.product_type}}\n- **Tags**: {{3.tags}}\n- **Options**: {{3.options}}\n- **Variants**: {{3.variants}}\n- **Current Description**: {{3.body_html}}\n\n## Your Task\n1. Analyze the product data above\n2. Reference the Category Research below for context\n3. Write a helpful, human-sounding description following the system prompt\n4. Return valid JSON only\n\n## Output Format Required\n```json\n{\n  \"ai_body_html\": \"<h2>Overview</h2><p>Your content here...</p>\"\n}\n```\n\nDo not include any text outside the JSON object."
+                    },
+                    {
+                        "role": "user",
+                        "content": "# CATEGORY RESEARCH REFERENCE\n\nUse this information to inform your writing. This provides category context, SEO terms, cross-sell logic, and compliance guardrails.\n\n---\n\n## PRODUCT CATEGORY TAXONOMY\n\n### Devices\n- **Bongs & Water Pipes**: Beaker, straight tube, recycler, percolator types (tree, showerhead, honeycomb, matrix). Key specs: height, joint size (10/14/18mm), joint angle (45°/90°), joint gender (male/female), ice pinch, wall thickness.\n- **Dab Rigs**: Concentrate-focused water pipes including recyclers, mini rigs, e-rigs. Key specs: joint size, banger compatibility, recycler function.\n- **Hand Pipes**: Spoon pipes, chillums, steamrollers, sherlocks, bubblers, glass blunts. Key specs: bowl size, carb placement, portability.\n- **Vaporizers**: Dry herb and concentrate vapes, portable and desktop. Key specs: heating method, temp control, battery, chamber size.\n\n### Accessories & Parts\n- **Downstems**: Diffused and non-diffused. Critical specs: effective length, joint size, diffusion style.\n- **Bowls/Slides**: Replacement bowls. Specs: joint size, gender, depth.\n- **Ash Catchers**: Add-on filtration. Specs: joint size/angle, perc type.\n- **Adapters**: Size/gender/angle converters.\n- **Quartz Bangers**: Dab nails. Specs: joint size, bucket diameter, wall thickness.\n- **Carb Caps**: Airflow control for dabbing.\n- **Grinders**: 2-4 piece, kief catch, material.\n\n### Consumables & Care\n- **Rolling Papers & Cones**: Size, material, burn rate.\n- **Cleaning Supplies**: Solutions, tools, Piece Water.\n- **Storage**: Smell-proof containers, cases.\n\n---\n\n## SEO KEYWORD CONTEXT\n\n### Bongs\nPrimary: bongs, water pipes, percolator bong, beaker bong, glass bong\nSupporting: 14mm bong, ice catcher bong, thick glass bong, diffused downstem\n\n### Dab Rigs  \nPrimary: dab rig, oil rig, concentrate rig, recycler dab rig\nSupporting: quartz banger, carb cap, low temp dabs, terp pearls\n\n### Downstems\nPrimary: downstem, diffused downstem, replacement downstem\nSupporting: 14mm downstem, 18mm downstem, downstem length, 6-slit diffuser\n\n### Hand Pipes\nPrimary: glass pipe, spoon pipe, hand pipe, chillum\nSupporting: travel pipe, pocket pipe, glass bowl\n\n### Grinders\nPrimary: herb grinder, 4-piece grinder, kief catcher\nSupporting: aluminum grinder, sharp teeth grinder\n\n---\n\n## COMPATIBILITY QUICK REFERENCE\n\n### Joint Sizes\n- 10mm: Smaller pieces, dab rigs\n- 14mm: Most common, standard bongs\n- 18mm: Larger pieces, heavy hitters\n\n### Joint Angles\n- 90°: Straight vertical (beaker bongs)\n- 45°: Angled (straight tubes, some rigs)\n\n### Joint Gender\n- Female joint: Accepts male accessories (most bongs)\n- Male joint: Fits into female accessories (some rigs)\n\n---\n\n## CROSS-SELL LOGIC\n\n- Bong → ash catcher, bowl, downstem, grinder, cleaner\n- Dab rig → banger, carb cap, dab tool, torch, mat\n- Downstem → bowl, ash catcher, cleaner\n- Grinder → rolling tray, papers, storage jar\n- Hand pipe → screens, cleaner, smell-proof pouch\n\n---\n\n## COMPLIANCE GUARDRAILS\n\n- No medical or health claims\n- No illegal use facilitation\n- No consumption instructions\n- Keep language focused on product features and general use\n- Age-appropriate content (21+ implied)\n- No platform-restricted advertising language\n\n---\n\n## MEASURING GUIDES (Reference for Relevant Products)\n\n### Downstem Measurement\n1. Effective length = inner joint shoulder to tip (NOT total length)\n2. Measure existing stem or use straw method:\n   - Insert straw until it sits at joint shoulder\n   - Mark where tip would sit (just above base)\n   - Measure that section\n3. Common lengths: 3\", 3.5\", 4\", 4.5\", 5\", 5.5\", 6\"\n\n### Joint Size Check\n- Dime test: dime ≈ 18mm, smaller = 14mm, much smaller = 10mm\n- Penny fits snugly in 18mm female joint\n\n---\n\n## WRITING NOTES FOR SPECIFIC CATEGORIES\n\n### For Glass Parts (Downstems, Bowls, Adapters)\n- Always specify joint size, angle, and gender\n- Explain compatibility clearly\n- Include measuring guidance\n- Note what pieces they work with\n\n### For Bongs & Rigs\n- Lead with the experience (smoothness, cooling, flavor)\n- Explain perc function in plain terms\n- Specify all joint specs for accessory shopping\n- Note cleaning considerations\n\n### For Grinders\n- Focus on grind consistency and collection\n- Material matters for durability\n- Piece count determines features\n- Size affects capacity and portability\n\n### For Cleaning Products\n- Explain what materials they're safe for\n- Usage frequency guidance\n- Results they can expect"
+                    }
+                ],
+                "max_tokens": "16000",
+                "temperature": "0.6",
+                "n_completions": "1",
+                "response_format": "json_object",
+                "frequency_penalty": "0.3",
+                "presence_penalty": "0.15",
+                "parseJSONResponse": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                },
+                "restore": {
+                    "expect": {
+                        "stop": {
+                            "mode": "chose"
+                        },
+                        "model": {
+                            "mode": "chose",
+                            "label": "gpt-4.1 (system)"
+                        },
+                        "select": {
+                            "label": "Create a Chat Completion (GPT and o1 models)"
+                        },
+                        "messages": {
+                            "mode": "chose",
+                            "items": [
+                                {
+                                    "role": {
+                                        "mode": "chose",
+                                        "label": "Developer / System"
+                                    }
+                                },
+                                {
+                                    "role": {
+                                        "mode": "chose",
+                                        "label": "User"
+                                    }
+                                },
+                                {
+                                    "role": {
+                                        "mode": "chose",
+                                        "label": "User"
+                                    }
+                                }
+                            ]
+                        },
+                        "logit_bias": {
+                            "mode": "chose"
+                        },
+                        "tool_choice": {
+                            "mode": "chose",
+                            "label": "Empty"
+                        },
+                        "response_format": {
+                            "mode": "chose",
+                            "label": "JSON Object"
+                        },
+                        "parseJSONResponse": {
+                            "mode": "chose"
+                        },
+                        "additionalParameters": {
+                            "mode": "chose"
+                        }
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "openai-gpt-3"
+                            },
+                            "label": "My OpenAI connection"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:openai-gpt-3",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ],
+                "expect": [
+                    {
+                        "name": "select",
+                        "type": "select",
+                        "label": "Select Method",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "chat",
+                                "prompt"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "temperature",
+                        "type": "number",
+                        "label": "Temperature",
+                        "validate": {
+                            "max": 2,
+                            "min": 0
+                        }
+                    },
+                    {
+                        "name": "top_p",
+                        "type": "number",
+                        "label": "Top P",
+                        "validate": {
+                            "max": 1,
+                            "min": 0
+                        }
+                    },
+                    {
+                        "name": "n_completions",
+                        "type": "number",
+                        "label": "Number"
+                    },
+                    {
+                        "name": "frequency_penalty",
+                        "type": "number",
+                        "label": "Frequency Penalty",
+                        "validate": {
+                            "max": 2,
+                            "min": -2
+                        }
+                    },
+                    {
+                        "name": "presence_penalty",
+                        "type": "number",
+                        "label": "Presence Penalty",
+                        "validate": {
+                            "max": 2,
+                            "min": -2
+                        }
+                    },
+                    {
+                        "name": "logit_bias",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "token",
+                                    "type": "text",
+                                    "label": "Token ID",
+                                    "required": true
+                                },
+                                {
+                                    "name": "probability",
+                                    "type": "number",
+                                    "label": "Probability",
+                                    "required": true,
+                                    "validate": {
+                                        "max": 100,
+                                        "min": -100
+                                    }
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Token Probability"
+                        },
+                        "type": "array",
+                        "label": "Token Probability"
+                    },
+                    {
+                        "name": "seed",
+                        "type": "integer",
+                        "label": "Seed"
+                    },
+                    {
+                        "name": "tool_choice",
+                        "type": "select",
+                        "label": "Tool Choice",
+                        "validate": {
+                            "enum": [
+                                "none",
+                                "auto",
+                                "required"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "stop",
+                        "spec": {
+                            "name": "value",
+                            "type": "text",
+                            "label": "Stop Sequence"
+                        },
+                        "type": "array",
+                        "label": "Stop Sequences",
+                        "validate": {
+                            "maxItems": 4
+                        }
+                    },
+                    {
+                        "name": "additionalParameters",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "key",
+                                    "type": "text",
+                                    "label": "Parameter Name",
+                                    "required": true
+                                },
+                                {
+                                    "name": "type",
+                                    "type": "select",
+                                    "label": "Input Type",
+                                    "options": [
+                                        {
+                                            "label": "Text",
+                                            "value": "text",
+                                            "nested": [
+                                                {
+                                                    "name": "value",
+                                                    "type": "text",
+                                                    "label": "Parameter Value"
+                                                }
+                                            ],
+                                            "default": true
+                                        },
+                                        {
+                                            "label": "Number",
+                                            "value": "number",
+                                            "nested": [
+                                                {
+                                                    "name": "value",
+                                                    "type": "number",
+                                                    "label": "Parameter Value"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "label": "Boolean",
+                                            "value": "boolean",
+                                            "nested": [
+                                                {
+                                                    "name": "value",
+                                                    "type": "boolean",
+                                                    "label": "Parameter Value"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "label": "Date",
+                                            "value": "date",
+                                            "nested": [
+                                                {
+                                                    "name": "value",
+                                                    "type": "date",
+                                                    "label": "Parameter Value"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "label": "Any",
+                                            "value": "any",
+                                            "nested": [
+                                                {
+                                                    "name": "value",
+                                                    "type": "any",
+                                                    "label": "Parameter Value"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Input Parameter"
+                        },
+                        "type": "array",
+                        "label": "Other Input Parameters"
+                    },
+                    {
+                        "name": "model",
+                        "type": "select",
+                        "label": "Model",
+                        "required": true
+                    },
+                    {
+                        "name": "max_tokens",
+                        "type": "uinteger",
+                        "label": "Max Completion Tokens"
+                    },
+                    {
+                        "name": "messages",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "role",
+                                    "type": "select",
+                                    "label": "Role",
+                                    "options": {
+                                        "store": [
+                                            {
+                                                "label": "User",
+                                                "value": "user"
+                                            },
+                                            {
+                                                "label": "Assistant",
+                                                "value": "assistant"
+                                            },
+                                            {
+                                                "label": "Developer / System",
+                                                "value": "system"
+                                            },
+                                            {
+                                                "label": "Tool",
+                                                "value": "tool"
+                                            }
+                                        ]
+                                    },
+                                    "required": true
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Message"
+                        },
+                        "type": "array",
+                        "label": "Messages",
+                        "required": true
+                    },
+                    {
+                        "name": "response_format",
+                        "type": "select",
+                        "label": "Response Format",
+                        "validate": {
+                            "enum": [
+                                "text",
+                                "json_object"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "parseJSONResponse",
+                        "type": "boolean",
+                        "label": "Parse JSON Response",
+                        "required": true
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "result",
+                        "type": "any",
+                        "label": "Result"
+                    },
+                    {
+                        "name": "id",
+                        "type": "text",
+                        "label": "ID"
+                    },
+                    {
+                        "name": "object",
+                        "type": "text",
+                        "label": "Object"
+                    },
+                    {
+                        "name": "created",
+                        "type": "date",
+                        "label": "Created"
+                    },
+                    {
+                        "name": "model",
+                        "type": "text",
+                        "label": "Model"
+                    },
+                    {
+                        "name": "choices",
+                        "spec": [
+                            {
+                                "name": "text",
+                                "type": "text",
+                                "label": "Text"
+                            },
+                            {
+                                "name": "index",
+                                "type": "number",
+                                "label": "Index"
+                            },
+                            {
+                                "name": "logprobs",
+                                "type": "text",
+                                "label": "Log Probs"
+                            },
+                            {
+                                "name": "finish_reason",
+                                "type": "text",
+                                "label": "Finish Reason"
+                            },
+                            {
+                                "name": "message",
+                                "spec": [
+                                    {
+                                        "name": "role",
+                                        "type": "text",
+                                        "label": "Role"
+                                    },
+                                    {
+                                        "name": "content",
+                                        "type": "text",
+                                        "label": "Content"
+                                    },
+                                    {
+                                        "name": "tool_calls",
+                                        "spec": [
+                                            {
+                                                "name": "id",
+                                                "type": "text",
+                                                "label": "ID"
+                                            },
+                                            {
+                                                "name": "type",
+                                                "type": "text",
+                                                "label": "Type"
+                                            },
+                                            {
+                                                "name": "function",
+                                                "spec": [
+                                                    {
+                                                        "name": "name",
+                                                        "type": "text",
+                                                        "label": "Name"
+                                                    },
+                                                    {
+                                                        "name": "arguments",
+                                                        "type": "text",
+                                                        "label": "Arguments"
+                                                    }
+                                                ],
+                                                "type": "collection",
+                                                "label": "Function"
+                                            }
+                                        ],
+                                        "type": "array",
+                                        "label": "Tool Calls"
+                                    },
+                                    {
+                                        "name": "refusal",
+                                        "type": "text",
+                                        "label": "Refusal"
+                                    }
+                                ],
+                                "type": "collection",
+                                "label": "Message"
+                            }
+                        ],
+                        "type": "array",
+                        "label": "Choices"
+                    },
+                    {
+                        "name": "usage",
+                        "spec": [
+                            {
+                                "name": "prompt_tokens",
+                                "type": "number",
+                                "label": "Prompt Tokens"
+                            },
+                            {
+                                "name": "completion_tokens",
+                                "type": "text",
+                                "label": "Completion Tokens"
+                            },
+                            {
+                                "name": "total_tokens",
+                                "type": "number",
+                                "label": "Total Tokens"
+                            }
+                        ],
+                        "type": "collection",
+                        "label": "Usage"
+                    },
+                    {
+                        "name": "system_fingerprint",
+                        "type": "text",
+                        "label": "System Fingerprint"
+                    }
+                ],
+                "advanced": true
+            }
+        },
+        {
+            "id": 6,
+            "module": "shopify:UpdateProduct",
+            "version": 2,
+            "parameters": {
+                "__IMTCONN__": 5141758
+            },
+            "mapper": {
+                "title": "{{3.title}}",
+                "body_html": "{{if(length(trim(ifempty(4.result.ai_body_html; 4.choices[1].message.content.ai_body_html; \"\"))) > 100; if(contains(ifempty(4.result.ai_body_html; 4.choices[1].message.content.ai_body_html); \"<h2>\"); ifempty(4.result.ai_body_html; 4.choices[1].message.content.ai_body_html); concat(\"<h2>Overview</h2>\"; ifempty(4.result.ai_body_html; 4.choices[1].message.content.ai_body_html))); 3.body_html)}}",
+                "product_id": "{{3.id}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "restore": {
+                    "expect": {
+                        "tags": {
+                            "mode": "chose"
+                        },
+                        "images": {
+                            "mode": "chose"
+                        },
+                        "status": {
+                            "mode": "chose",
+                            "label": "Empty"
+                        },
+                        "options": {
+                            "mode": "chose"
+                        },
+                        "variants": {
+                            "mode": "chose"
+                        },
+                        "published": {
+                            "mode": "chose"
+                        },
+                        "published_scope": {
+                            "mode": "chose",
+                            "label": "Empty"
+                        }
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "shopify4"
+                            },
+                            "label": "My Shopify (Custom app) connection (oil-slick-pad.myshopify.com)"
+                        }
+                    }
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": [
+            {
+                "id": 1,
+                "text": "## v2.0 Optimizations\n\n**Model**: GPT-4.1 with optimized parameters\n\n**Key Improvements**:\n- Natural, human-sounding output (anti-AI detection)\n- GEO/LLM SEO optimization for AI search engines\n- Streamlined prompts (reduced token usage)\n- Better error handling\n- FAQ sections for featured snippets\n\n**Settings**:\n- Temperature: 0.6 (more creative/natural)\n- Top P: 0.92 (diverse vocabulary)\n- Frequency Penalty: 0.3 (reduces repetition)\n- Presence Penalty: 0.15 (encourages topic coverage)",
+                "designer": {
+                    "x": 300,
+                    "y": -200
+                }
+            }
+        ]
+    }
+}
