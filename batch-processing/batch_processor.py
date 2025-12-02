@@ -901,7 +901,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
             json={
                 "model": REALTIME_MODEL,
                 "response_format": {"type": "json_object"},
-                "max_tokens": 16000,
+                "max_completion_tokens": 16000,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_content}
