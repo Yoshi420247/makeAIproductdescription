@@ -78,6 +78,12 @@ on:
         type: string
         default: '20'
 
+      limit:
+        description: 'Limit number of products to process (0 = no limit, use for testing)'
+        required: false
+        type: string
+        default: '0'
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
@@ -110,6 +116,7 @@ jobs:
           SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
           BATCH_ID: ${{ github.event.inputs.batch_id }}
           MAX_WORKERS: ${{ github.event.inputs.max_workers }}
+          PRODUCT_LIMIT: ${{ github.event.inputs.limit }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 

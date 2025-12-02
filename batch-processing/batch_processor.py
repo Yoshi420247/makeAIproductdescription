@@ -48,6 +48,9 @@ SAMPLE_COUNT = int(os.environ.get("SAMPLE_COUNT", "5"))
 # Batch ID (can be passed directly via env var)
 BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
 
+# Product limit (for testing)
+PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
+
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
@@ -199,6 +202,11 @@ def apply_filters(products):
 
     if not INCLUDE_DRAFTS and PRODUCT_FILTER != "all_products":
         filtered = [p for p in filtered if p.get("status") != "draft"]
+
+    # Apply product limit (for testing)
+    if PRODUCT_LIMIT > 0:
+        print(f"  Limiting to first {PRODUCT_LIMIT} products (test mode)")
+        filtered = filtered[:PRODUCT_LIMIT]
 
     return filtered
 
