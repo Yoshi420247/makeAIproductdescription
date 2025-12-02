@@ -74,7 +74,7 @@ Process **hundreds or thousands** of product descriptions simultaneously using O
 
 Each line in the batch file:
 ```json
-{"custom_id": "product_123", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-5.1", "messages": [...], "response_format": {"type": "json_object"}}}
+{"custom_id": "product_123", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4o", "messages": [...], "response_format": {"type": "json_object"}}}
 ```
 
 ## Monitoring
