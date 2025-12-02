@@ -607,8 +607,27 @@ def preview_results():
     output_file_id = batch.get("output_file_id")
     if not output_file_id:
         print("❌ No output file found (batch completed but no results).")
-        if batch.get("error_file_id"):
-            print(f"   Error file exists - check errors. ID: {batch.get('error_file_id')}")
+        error_file_id = batch.get("error_file_id")
+        if error_file_id:
+            print(f"   Downloading error file to see what went wrong...")
+            error_response = requests.get(
+                f"https://api.openai.com/v1/files/{error_file_id}/content",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+            )
+            print("\n" + "="*70)
+            print("ERROR DETAILS (first 5 errors):")
+            print("="*70)
+            for line in error_response.text.strip().split('\n')[:5]:
+                try:
+                    error_data = json.loads(line)
+                    custom_id = error_data.get("custom_id", "unknown")
+                    error = error_data.get("error", {})
+                    print(f"\n Product: {custom_id}")
+                    print(f"   Code: {error.get('code', 'N/A')}")
+                    print(f"   Message: {error.get('message', 'N/A')}")
+                except:
+                    print(f"   Raw: {line[:200]}")
+            print("\n" + "="*70)
         return
 
     # Download results
