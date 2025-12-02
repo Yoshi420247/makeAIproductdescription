@@ -1,0 +1,205 @@
+{
+    "name": "Batch Product Descriptions — Step 1: Submit to OpenAI",
+    "flow": [
+        {
+            "id": 1,
+            "module": "shopify:SearchProducts",
+            "version": 2,
+            "parameters": {
+                "__IMTCONN__": 5141758,
+                "limit": 250
+            },
+            "mapper": {
+                "status": "active",
+                "published_status": "published"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "shopify4"
+                            },
+                            "label": "My Shopify (Custom app) connection"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicAggregator",
+            "version": 1,
+            "parameters": {
+                "feeder": 1
+            },
+            "mapper": {
+                "value": "{{formatJson(emptyobject; \"custom_id\"; 1.id; \"method\"; \"POST\"; \"url\"; \"/v1/chat/completions\"; \"body\"; emptyobject; \"model\"; \"gpt-5.1\"; \"response_format\"; emptyobject; \"type\"; \"json_object\"; \"max_tokens\"; 16000; \"messages\"; emptyarray; emptyobject; \"role\"; \"system\"; \"content\"; \"You are an expert e-commerce copywriter for Oil Slick. Write product descriptions that sound genuinely human and helpful.\\n\\n# OUTPUT FORMAT (STRICT)\\nReturn ONLY valid JSON: {\\\"ai_body_html\\\": \\\"<h2>Overview</h2><p>...</p>...\\\"}\\n\\n# VOICE RULES\\n- Write like explaining to a friend\\n- Vary sentence length naturally\\n- Use contractions: you'll, it's, doesn't\\n- NO buzzwords: elevate, unlock, game-changer\\n- NO phrases: dive into, it's important to note\\n\\n# STRUCTURE\\n- <h2>Overview</h2> (50-80 words): What it IS, who it's FOR\\n- <h2>Key Features</h2> — Benefit bullets\\n- <h2>Specs</h2> — Only with real data\\n- <h2>Common Questions</h2> — 3-5 FAQs\\n\\n# CATEGORY INTELLIGENCE\\n**Downstems**: effective length (shoulder to tip), joint size (10/14/18mm), angle (45°/90°)\\n**Bongs**: perc type, joint specs, cleaning notes\\n**Grinders**: piece count, kief catch, material\\n\\nLength: 1,200-1,600 words. No fabricated specs.\"; emptyobject; \"role\"; \"user\"; \"content\"; concat(\"Write a product description for:\\n\\nTitle: \"; 1.title; \"\\nVendor: Oil Slick\\nType: \"; 1.product_type; \"\\nTags: \"; 1.tags; \"\\nOptions: \"; 1.options; \"\\nVariants: \"; 1.variants; \"\\nCurrent Description: \"; 1.body_html; \"\\n\\nReturn JSON only: {\\\"ai_body_html\\\": \\\"...\\\"}\"))}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "util:TextAggregator",
+            "version": 1,
+            "parameters": {
+                "feeder": 1,
+                "rowSeparator": "\n"
+            },
+            "mapper": {
+                "value": "{\"custom_id\": \"{{1.id}}\", \"method\": \"POST\", \"url\": \"/v1/chat/completions\", \"body\": {\"model\": \"gpt-5.1\", \"response_format\": {\"type\": \"json_object\"}, \"max_tokens\": 16000, \"messages\": [{\"role\": \"system\", \"content\": \"You are an expert e-commerce copywriter for Oil Slick. Write product descriptions that sound genuinely human.\\n\\nOUTPUT: Return ONLY valid JSON: {\\\"ai_body_html\\\": \\\"<h2>Overview</h2><p>...</p>\\\"}\\n\\nVOICE: Write like explaining to a friend. Vary sentence length. Use contractions. NO buzzwords (elevate, unlock, game-changer). NO phrases (dive into, it's important to note).\\n\\nSTRUCTURE: <h2>Overview</h2> (50-80 words), <h2>Key Features</h2>, <h2>Specs</h2> (if data exists), <h2>Common Questions</h2> (3-5 FAQs).\\n\\nCATEGORY NOTES: Downstems=effective length (shoulder to tip), joint size, angle. Bongs=perc type, joint specs. Grinders=piece count, kief catch.\\n\\nLength: 1,200-1,600 words. No fabricated specs.\"}, {\"role\": \"user\", \"content\": \"Write description for: Title: {{replace(1.title; \"\\\"\"; \"\\\\\\\"\")}}, Type: {{1.product_type}}, Tags: {{1.tags}}, Variants: {{replace(toString(1.variants); \"\\\"\"; \"\\\\\\\"\")}}, Current: {{replace(1.body_html; \"\\\"\"; \"\\\\\\\"\")}}\"}]}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "http:ActionSendData",
+            "version": 3,
+            "parameters": {},
+            "mapper": {
+                "ca": "",
+                "qs": [],
+                "url": "https://api.openai.com/v1/files",
+                "data": "{{3.text}}",
+                "gzip": true,
+                "method": "POST",
+                "headers": [
+                    {
+                        "name": "Authorization",
+                        "value": "Bearer {{OPENAI_API_KEY}}"
+                    }
+                ],
+                "timeout": "60",
+                "useMtls": false,
+                "bodyType": "multipart_form_data",
+                "contentType": "multipart/form-data",
+                "serializeUrl": false,
+                "shareCookies": false,
+                "parseResponse": true,
+                "followRedirect": true,
+                "useQuerystring": false,
+                "followAllRedirects": false,
+                "rejectUnauthorized": true,
+                "multipartFields": [
+                    {
+                        "name": "purpose",
+                        "value": "batch"
+                    },
+                    {
+                        "name": "file",
+                        "fileName": "batch_requests.jsonl",
+                        "data": "{{3.text}}"
+                    }
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "http:ActionSendData",
+            "version": 3,
+            "parameters": {},
+            "mapper": {
+                "ca": "",
+                "qs": [],
+                "url": "https://api.openai.com/v1/batches",
+                "data": "{\"input_file_id\": \"{{4.data.id}}\", \"endpoint\": \"/v1/chat/completions\", \"completion_window\": \"24h\"}",
+                "gzip": true,
+                "method": "POST",
+                "headers": [
+                    {
+                        "name": "Authorization",
+                        "value": "Bearer {{OPENAI_API_KEY}}"
+                    },
+                    {
+                        "name": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "timeout": "60",
+                "useMtls": false,
+                "bodyType": "raw",
+                "contentType": "application/json",
+                "serializeUrl": false,
+                "shareCookies": false,
+                "parseResponse": true,
+                "followRedirect": true,
+                "useQuerystring": false,
+                "followAllRedirects": false,
+                "rejectUnauthorized": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "util:SetVariable",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "name": "batch_id",
+                "value": "{{5.data.id}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": [
+            {
+                "id": 1,
+                "text": "## Batch Submit Scenario\n\n**What it does:**\n1. Gets all active products from Shopify\n2. Creates JSONL file with GPT-5.1 prompts\n3. Uploads to OpenAI Files API\n4. Creates Batch job\n5. Saves batch_id for tracking\n\n**Run:** Manually or schedule (weekly/monthly)\n\n**Next:** Run Scenario 2 to check status and import results\n\n**Note:** Replace {{OPENAI_API_KEY}} with your actual key or use Make.com's OpenAI connection",
+                "designer": {
+                    "x": 600,
+                    "y": -200
+                }
+            }
+        ]
+    }
+}
