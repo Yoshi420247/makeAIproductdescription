@@ -228,7 +228,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
         "method": "POST",
         "url": "/v1/chat/completions",
         "body": {
-            "model": "gpt-4o",
+            "model": "gpt-5.1-2025-11-13",
             "response_format": {"type": "json_object"},
             "max_tokens": 16000,
             "messages": [
