@@ -25,6 +25,8 @@ import requests
 from pathlib import Path
 from datetime import datetime
 from html import escape
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # === CONFIGURATION ===
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -50,6 +52,14 @@ BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
 PREVIEW_FILE = "preview_report.html"
+
+# Parallel processing config
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
+REALTIME_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for realtime processing
+
+# Thread-safe counter for progress
+progress_lock = threading.Lock()
+progress_count = 0
 
 
 def get_batch_id():
@@ -845,26 +855,287 @@ def download_and_apply():
 """)
 
 
+def process_single_product(product, total_count):
+    """Process a single product using real-time GPT-5.1 API."""
+    global progress_count
+
+    product_id = str(product["id"])
+    title = product.get("title", "Unknown")
+
+    # Build the prompt (same as batch)
+    body_html = product.get("body_html", "") or ""
+    tags = product.get("tags", "") or ""
+    product_type = product.get("product_type", "") or ""
+    vendor = product.get("vendor", "") or ""
+
+    variants = product.get("variants", [])
+    variant_info = ""
+    if variants:
+        prices = [v.get("price", "0") for v in variants[:5]]
+        variant_info = f"Price range: ${min(prices)} - ${max(prices)}" if len(set(prices)) > 1 else f"Price: ${prices[0]}"
+
+    user_content = f"""Product: {title}
+Type: {product_type}
+Vendor: {vendor}
+Tags: {tags}
+{variant_info}
+Current Description: {body_html if body_html else '(none)'}
+
+Return JSON only: {{"ai_body_html": "..."}}"""
+
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": REALTIME_MODEL,
+                "response_format": {"type": "json_object"},
+                "max_tokens": 16000,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ]
+            },
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            body_html = parsed.get("ai_body_html", "")
+
+            with progress_lock:
+                progress_count += 1
+                if progress_count % 10 == 0 or progress_count == total_count:
+                    print(f"  ✓ Progress: {progress_count}/{total_count} ({100*progress_count/total_count:.1f}%)")
+
+            return {
+                "product_id": product_id,
+                "title": title,
+                "body_html": body_html,
+                "success": True,
+                "error": None
+            }
+        elif response.status_code == 429:
+            # Rate limited - wait and retry
+            time.sleep(5)
+            return process_single_product(product, total_count)
+        else:
+            error_msg = response.json().get("error", {}).get("message", f"Status {response.status_code}")
+            return {
+                "product_id": product_id,
+                "title": title,
+                "body_html": "",
+                "success": False,
+                "error": error_msg
+            }
+    except Exception as e:
+        return {
+            "product_id": product_id,
+            "title": title,
+            "body_html": "",
+            "success": False,
+            "error": str(e)
+        }
+
+
+def realtime_process():
+    """Process all products using parallel real-time GPT-5.1 API calls."""
+    global progress_count
+    progress_count = 0
+
+    check_env()
+
+    print(f"\n📦 STEP 1: Fetching products from Shopify...")
+    products = get_shopify_products()
+
+    if not products:
+        print("❌ No products to process.")
+        return
+
+    total = len(products)
+    print(f"\n🚀 STEP 2: Processing {total} products with GPT-5.1 (parallel)...")
+    print(f"   Model: {REALTIME_MODEL}")
+    print(f"   Workers: {MAX_WORKERS} concurrent requests")
+    print(f"   Estimated time: {total * 3 / MAX_WORKERS / 60:.1f} minutes\n")
+
+    results = []
+    success_count = 0
+    error_count = 0
+
+    start_time = time.time()
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(process_single_product, p, total): p for p in products}
+
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+            if result["success"]:
+                success_count += 1
+            else:
+                error_count += 1
+                if error_count <= 5:
+                    print(f"  ✗ Error on {result['product_id']}: {result['error'][:100]}")
+
+    elapsed = time.time() - start_time
+
+    # Save results to JSONL (same format as batch for compatibility)
+    with open(RESULTS_FILE, "w") as f:
+        for r in results:
+            if r["success"]:
+                line = {
+                    "custom_id": r["product_id"],
+                    "response": {
+                        "body": {
+                            "choices": [{
+                                "message": {
+                                    "content": json.dumps({"ai_body_html": r["body_html"]})
+                                }
+                            }]
+                        }
+                    }
+                }
+                f.write(json.dumps(line) + "\n")
+
+    # Generate preview HTML
+    print(f"\n📄 STEP 3: Generating preview report...")
+    preview_results_data = []
+    with open(RESULTS_FILE) as f:
+        for line in f:
+            preview_results_data.append(json.loads(line))
+
+    html = generate_preview_html(preview_results_data, min(SAMPLE_COUNT, len(preview_results_data)))
+    with open(PREVIEW_FILE, "w") as f:
+        f.write(html)
+
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║              ✅ REALTIME PROCESSING COMPLETE                     ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Model:       {REALTIME_MODEL:<50} ║
+║  Products:    {total:<50} ║
+║  Successful:  {success_count:<50} ║
+║  Failed:      {error_count:<50} ║
+║  Time:        {elapsed/60:.1f} minutes{' ':<43} ║
+╠══════════════════════════════════════════════════════════════════╣
+║  📄 Preview report: {PREVIEW_FILE:<44} ║
+║  📥 Download 'description-preview' artifact to review            ║
+║  ✅ Run 'apply' action to update Shopify                         ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+
+
+def apply_results():
+    """Apply saved results to Shopify (for realtime mode)."""
+    check_env()
+
+    if not Path(RESULTS_FILE).exists():
+        print("❌ No results file found. Run 'realtime' first.")
+        return
+
+    results = []
+    with open(RESULTS_FILE) as f:
+        for line in f:
+            results.append(json.loads(line))
+
+    if not results:
+        print("❌ No results to apply.")
+        return
+
+    total = len(results)
+    print(f"\n🔄 Applying {total} descriptions to Shopify...")
+
+    if DRY_RUN:
+        print("🔒 DRY RUN MODE - Not updating Shopify")
+        return
+
+    success_count = 0
+    error_count = 0
+    skip_count = 0
+
+    for i, result in enumerate(results):
+        try:
+            product_id = result.get("custom_id")
+            content = result.get("response", {}).get("body", {}).get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            parsed = json.loads(content)
+            body_html = parsed.get("ai_body_html", "")
+
+            if (i + 1) % 50 == 0:
+                print(f"  Processing {i+1}/{total}...")
+
+            if len(body_html) < 100:
+                skip_count += 1
+                continue
+
+            url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/products/{product_id}.json"
+            headers = {"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN, "Content-Type": "application/json"}
+            payload = {"product": {"id": int(product_id), "body_html": body_html}}
+
+            response = requests.put(url, headers=headers, json=payload)
+
+            if response.status_code == 200:
+                success_count += 1
+            else:
+                error_count += 1
+
+            time.sleep(0.5)  # Shopify rate limit
+
+        except Exception as e:
+            error_count += 1
+
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                      ✅ SHOPIFY UPDATED                          ║
+╠══════════════════════════════════════════════════════════════════╣
+║  ✓ Successfully updated:  {success_count:<42} ║
+║  ⚠️ Skipped (too short):   {skip_count:<42} ║
+║  ✗ Errors:                {error_count:<42} ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Parallel Product Description Generator")
-    parser.add_argument("command", choices=["submit", "status", "preview", "download"])
+    parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "apply"])
     args = parser.parse_args()
 
-    print("""
+    if args.command == "realtime":
+        print("""
+╔══════════════════════════════════════════════════════════════════╗
+║        🚀 Parallel Product Description Generator                 ║
+║           Using GPT-5.1 Real-Time API (parallel)                 ║
+╚══════════════════════════════════════════════════════════════════╝
+        """)
+        realtime_process()
+    elif args.command == "apply":
+        print("""
+╔══════════════════════════════════════════════════════════════════╗
+║        🚀 Parallel Product Description Generator                 ║
+║           Applying Results to Shopify                            ║
+╚══════════════════════════════════════════════════════════════════╝
+        """)
+        apply_results()
+    else:
+        print("""
 ╔══════════════════════════════════════════════════════════════════╗
 ║        🚀 Parallel Product Description Generator                 ║
 ║           Using OpenAI Batch API (50%% cheaper!)                  ║
 ╚══════════════════════════════════════════════════════════════════╝
-    """)
+        """)
 
-    if args.command == "submit":
-        submit_batch()
-    elif args.command == "status":
-        check_status()
-    elif args.command == "preview":
-        preview_results()
-    elif args.command == "download":
-        download_and_apply()
+        if args.command == "submit":
+            submit_batch()
+        elif args.command == "status":
+            check_status()
+        elif args.command == "preview":
+            preview_results()
+        elif args.command == "download":
+            download_and_apply()
 
 
 if __name__ == "__main__":

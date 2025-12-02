@@ -13,6 +13,8 @@ on:
           - status
           - preview
           - download
+          - realtime
+          - apply
 
       product_filter:
         description: 'Which products to process'
@@ -70,10 +72,16 @@ on:
         type: string
         default: ''
 
+      max_workers:
+        description: 'Concurrent API requests for realtime mode (default: 20)'
+        required: false
+        type: string
+        default: '20'
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
@@ -101,6 +109,7 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
           BATCH_ID: ${{ github.event.inputs.batch_id }}
+          MAX_WORKERS: ${{ github.event.inputs.max_workers }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 
@@ -113,7 +122,7 @@ jobs:
           retention-days: 30
 
       - name: Upload preview report
-        if: github.event.inputs.action == 'preview' || github.event.inputs.action == 'download'
+        if: github.event.inputs.action == 'preview' || github.event.inputs.action == 'download' || github.event.inputs.action == 'realtime'
         uses: actions/upload-artifact@v4
         with:
           name: description-preview
