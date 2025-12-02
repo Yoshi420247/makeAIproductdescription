@@ -64,6 +64,12 @@ on:
         type: string
         default: '5'
 
+      batch_id:
+        description: 'Batch ID (required for status/preview/download - from submit output)'
+        required: false
+        type: string
+        default: ''
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
@@ -82,13 +88,6 @@ jobs:
         run: |
           pip install requests
 
-      - name: Download batch ID (if not submit)
-        if: github.event.inputs.action != 'submit'
-        uses: actions/download-artifact@v4
-        with:
-          name: batch-id
-        continue-on-error: true
-
       - name: Run batch processor
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -101,6 +100,7 @@ jobs:
           INCLUDE_DRAFTS: ${{ github.event.inputs.include_drafts }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
+          BATCH_ID: ${{ github.event.inputs.batch_id }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 

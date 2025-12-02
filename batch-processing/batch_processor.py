@@ -43,10 +43,28 @@ MIN_DESCRIPTION_LENGTH = int(os.environ.get("MIN_DESCRIPTION_LENGTH", "100"))
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 SAMPLE_COUNT = int(os.environ.get("SAMPLE_COUNT", "5"))
 
+# Batch ID (can be passed directly via env var)
+BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
+
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
 PREVIEW_FILE = "preview_report.html"
+
+
+def get_batch_id():
+    """Get batch ID from environment variable or file."""
+    if BATCH_ID_INPUT:
+        print(f"📋 Using batch ID from input: {BATCH_ID_INPUT}")
+        return BATCH_ID_INPUT
+
+    if Path(BATCH_ID_FILE).exists():
+        with open(BATCH_ID_FILE) as f:
+            batch_id = f.read().strip()
+            print(f"📋 Using batch ID from file: {batch_id}")
+            return batch_id
+
+    return None
 
 # === SYSTEM PROMPT (GPT-5.1 Optimized) ===
 SYSTEM_PROMPT = """You are an expert e-commerce copywriter for Oil Slick. Write product descriptions that sound genuinely human and helpful.
@@ -301,12 +319,10 @@ def check_status():
     """Check the status of the current batch job."""
     check_env()
 
-    if not Path(BATCH_ID_FILE).exists():
-        print("❌ No batch ID found. Run with action 'submit' first.")
+    batch_id = get_batch_id()
+    if not batch_id:
+        print("❌ No batch ID found. Provide batch_id input or run 'submit' first.")
         return None
-
-    with open(BATCH_ID_FILE) as f:
-        batch_id = f.read().strip()
 
     print(f"🔍 Checking batch: {batch_id}")
 
@@ -552,12 +568,10 @@ def preview_results():
     """Preview results without applying to Shopify."""
     check_env()
 
-    if not Path(BATCH_ID_FILE).exists():
-        print("❌ No batch ID found. Run 'submit' first.")
+    batch_id = get_batch_id()
+    if not batch_id:
+        print("❌ No batch ID found. Provide batch_id input or run 'submit' first.")
         return
-
-    with open(BATCH_ID_FILE) as f:
-        batch_id = f.read().strip()
 
     # Check status
     print("🔍 Checking batch status...")
@@ -658,12 +672,10 @@ def download_and_apply():
     """Download batch results and update Shopify products."""
     check_env()
 
-    if not Path(BATCH_ID_FILE).exists():
-        print("❌ No batch ID found. Run 'submit' first.")
+    batch_id = get_batch_id()
+    if not batch_id:
+        print("❌ No batch ID found. Provide batch_id input or run 'submit' first.")
         return
-
-    with open(BATCH_ID_FILE) as f:
-        batch_id = f.read().strip()
 
     # Check status
     print("🔍 Checking batch status...")
