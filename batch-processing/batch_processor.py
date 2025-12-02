@@ -14,6 +14,14 @@ Environment Variables Required:
     OPENAI_API_KEY        - Your OpenAI API key
     SHOPIFY_STORE         - Your store (e.g., oil-slick-pad.myshopify.com)
     SHOPIFY_ACCESS_TOKEN  - Shopify Admin API access token
+
+Optional Filter Variables:
+    PRODUCT_FILTER        - all_active, all_products, needs_description, short_description, by_type, by_vendor, by_tag
+    FILTER_PRODUCT_TYPE   - Filter by product type (when PRODUCT_FILTER=by_type)
+    FILTER_VENDOR         - Filter by vendor (when PRODUCT_FILTER=by_vendor)
+    FILTER_TAG            - Filter by tag (when PRODUCT_FILTER=by_tag)
+    INCLUDE_DRAFTS        - Include draft products (true/false)
+    MIN_DESCRIPTION_LENGTH - Minimum chars to consider "has description" (default: 100)
 """
 
 import os
@@ -27,6 +35,14 @@ from pathlib import Path
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE")
 SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN")
+
+# Filter options
+PRODUCT_FILTER = os.environ.get("PRODUCT_FILTER", "all_active")
+FILTER_PRODUCT_TYPE = os.environ.get("FILTER_PRODUCT_TYPE", "")
+FILTER_VENDOR = os.environ.get("FILTER_VENDOR", "")
+FILTER_TAG = os.environ.get("FILTER_TAG", "")
+INCLUDE_DRAFTS = os.environ.get("INCLUDE_DRAFTS", "false").lower() == "true"
+MIN_DESCRIPTION_LENGTH = int(os.environ.get("MIN_DESCRIPTION_LENGTH", "100"))
 
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
@@ -56,6 +72,9 @@ Return ONLY valid JSON: {"ai_body_html": "<h2>Overview</h2><p>...</p>..."}
 **Downstems**: Define "effective length" (shoulder to tip). Joint size (10/14/18mm), angle (45°/90°), gender.
 **Bongs**: Perc type explained plainly. Joint specs. Cleaning notes.
 **Grinders**: Piece count, kief catch, tooth design, material.
+**Dab Rigs**: Banger compatibility, joint size, recycler function.
+**Hand Pipes**: Bowl size, carb placement, portability.
+**Vaporizers**: Heating method, temp control, battery life.
 
 # RULES
 - Length: 1,200-1,600 words. Quality over padding.
@@ -77,18 +96,48 @@ def check_env():
 
     if missing:
         print(f"❌ Missing environment variables: {', '.join(missing)}")
-        print("\nSet them in your environment or .env file:")
-        print("  export OPENAI_API_KEY=sk-...")
-        print("  export SHOPIFY_STORE=your-store.myshopify.com")
-        print("  export SHOPIFY_ACCESS_TOKEN=shpat_...")
+        print("\nSet them in your environment or GitHub Secrets:")
+        print("  OPENAI_API_KEY=sk-...")
+        print("  SHOPIFY_STORE=your-store.myshopify.com")
+        print("  SHOPIFY_ACCESS_TOKEN=shpat_...")
         exit(1)
 
 
 def get_shopify_products():
-    """Fetch all active products from Shopify."""
+    """Fetch products from Shopify based on filter settings."""
+
+    print(f"\n📋 FILTER SETTINGS:")
+    print(f"   Filter: {PRODUCT_FILTER}")
+    if FILTER_PRODUCT_TYPE:
+        print(f"   Product Type: {FILTER_PRODUCT_TYPE}")
+    if FILTER_VENDOR:
+        print(f"   Vendor: {FILTER_VENDOR}")
+    if FILTER_TAG:
+        print(f"   Tag: {FILTER_TAG}")
+    print(f"   Include Drafts: {INCLUDE_DRAFTS}")
+    print(f"   Min Description Length: {MIN_DESCRIPTION_LENGTH}")
+    print()
+
+    # Build API parameters
+    params = {"limit": 250}
+
+    # Status filter
+    if PRODUCT_FILTER == "all_products" or INCLUDE_DRAFTS:
+        # Don't filter by status - get everything
+        pass
+    else:
+        params["status"] = "active"
+
+    # Type filter (API level)
+    if PRODUCT_FILTER == "by_type" and FILTER_PRODUCT_TYPE:
+        params["product_type"] = FILTER_PRODUCT_TYPE
+
+    # Vendor filter (API level)
+    if PRODUCT_FILTER == "by_vendor" and FILTER_VENDOR:
+        params["vendor"] = FILTER_VENDOR
+
     url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/products.json"
     headers = {"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN}
-    params = {"status": "active", "limit": 250}
 
     all_products = []
     page = 1
@@ -115,10 +164,55 @@ def get_shopify_products():
                 if 'rel="next"' in link:
                     url = link.split(";")[0].strip("<> ")
                     page += 1
-        params = {}
+        params = {}  # Clear params for paginated requests
 
     print(f"✓ Fetched {len(all_products)} products from Shopify")
-    return all_products
+
+    # Apply additional filters
+    filtered_products = apply_filters(all_products)
+
+    return filtered_products
+
+
+def apply_filters(products):
+    """Apply additional filters that can't be done at API level."""
+
+    original_count = len(products)
+    filtered = products
+
+    # Filter by tag
+    if PRODUCT_FILTER == "by_tag" and FILTER_TAG:
+        tag_lower = FILTER_TAG.lower()
+        filtered = [
+            p for p in filtered
+            if tag_lower in (p.get("tags", "") or "").lower()
+        ]
+        print(f"  Filtered by tag '{FILTER_TAG}': {len(filtered)} products")
+
+    # Filter: needs description (empty or very short)
+    if PRODUCT_FILTER == "needs_description":
+        filtered = [
+            p for p in filtered
+            if not p.get("body_html") or len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH
+        ]
+        print(f"  Filtered to products needing descriptions: {len(filtered)} products")
+
+    # Filter: short description (has some content but below threshold)
+    if PRODUCT_FILTER == "short_description":
+        filtered = [
+            p for p in filtered
+            if p.get("body_html") and 0 < len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH
+        ]
+        print(f"  Filtered to products with short descriptions: {len(filtered)} products")
+
+    # Exclude drafts if not included
+    if not INCLUDE_DRAFTS and PRODUCT_FILTER != "all_products":
+        filtered = [p for p in filtered if p.get("status") != "draft"]
+
+    if len(filtered) != original_count:
+        print(f"  Final count after filters: {len(filtered)} products (from {original_count})")
+
+    return filtered
 
 
 def create_batch_request(product):
@@ -128,6 +222,7 @@ def create_batch_request(product):
     product_type = product.get('product_type', '')
     tags = product.get('tags', '')
     body_html = product.get('body_html', '') or ''
+    vendor = product.get('vendor', '')
 
     # Truncate long descriptions
     if len(body_html) > 1000:
@@ -146,12 +241,12 @@ def create_batch_request(product):
     user_content = f"""Write a product description for:
 
 Title: {title}
-Vendor: Oil Slick
+Vendor: {vendor if vendor else 'Oil Slick'}
 Type: {product_type}
 Tags: {tags}
 Options: {options_str}
 Variants: {variants_str}
-Current Description: {body_html}
+Current Description: {body_html if body_html else '(none)'}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
 
@@ -179,7 +274,10 @@ def submit_batch():
     products = get_shopify_products()
 
     if not products:
-        print("❌ No products found!")
+        print("❌ No products found matching your filters!")
+        print("\nTry adjusting your filter settings:")
+        print("  - PRODUCT_FILTER: all_active, all_products, needs_description, etc.")
+        print("  - INCLUDE_DRAFTS: true/false")
         return
 
     print(f"\n📝 STEP 2: Creating batch file with {len(products)} requests...")
@@ -236,21 +334,28 @@ def submit_batch():
     with open(BATCH_ID_FILE, "w") as f:
         f.write(batch_id)
 
+    # Estimate cost (rough: ~$0.025 per product at ~2K tokens output)
+    estimated_cost = len(products) * 0.025
+
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║                      ✅ BATCH SUBMITTED                          ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Batch ID:    {batch_id:<50} ║
-║  Products:    {len(products):<50} ║
-║  Status:      {batch_data.get('status', 'unknown'):<50} ║
-║  Window:      24 hours (usually completes in 1-4 hours)          ║
+║  Batch ID:      {batch_id:<48} ║
+║  Products:      {len(products):<48} ║
+║  Filter:        {PRODUCT_FILTER:<48} ║
+║  Est. Cost:     ~${estimated_cost:.2f} (50% off regular API){' ':<21} ║
+║  Status:        {batch_data.get('status', 'unknown'):<48} ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  NEXT STEPS:                                                     ║
 ║  1. Wait 1-4 hours for processing                                ║
-║  2. Run: python batch_processor.py status                        ║
-║  3. When complete: python batch_processor.py download            ║
+║  2. Run with action: status                                      ║
+║  3. When complete, run with action: download                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
+
+    # Print batch ID prominently for easy copying
+    print(f"BATCH_ID: {batch_id}")
 
 
 def check_status():
@@ -258,7 +363,7 @@ def check_status():
     check_env()
 
     if not Path(BATCH_ID_FILE).exists():
-        print("❌ No batch ID found. Run 'python batch_processor.py submit' first.")
+        print("❌ No batch ID found. Run with action 'submit' first.")
         return None
 
     with open(BATCH_ID_FILE) as f:
@@ -308,7 +413,7 @@ def check_status():
         print(f"""╠══════════════════════════════════════════════════════════════════╣
 ║  Output File: {batch.get('output_file_id', 'N/A'):<50} ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  ✅ READY! Run: python batch_processor.py download               ║
+║  ✅ READY! Run with action: download                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
     elif batch.get("status") == "in_progress":
@@ -353,7 +458,7 @@ def download_and_apply():
 
     if batch.get("status") != "completed":
         print(f"❌ Batch not ready. Status: {batch.get('status')}")
-        print("Run 'python batch_processor.py status' to check progress.")
+        print("Run with action 'status' to check progress.")
         return
 
     output_file_id = batch.get("output_file_id")
@@ -393,7 +498,7 @@ def download_and_apply():
                 result = json.loads(line)
                 product_id = result.get("custom_id")
 
-                if i % 10 == 0:
+                if (i + 1) % 10 == 0 or i == 0:
                     print(f"  Processing {i+1}/{total}...")
 
                 # Check for errors in the response
@@ -472,10 +577,14 @@ Examples:
   python batch_processor.py status     # Check batch status
   python batch_processor.py download   # Download results and update Shopify
 
-Environment Variables Required:
-  OPENAI_API_KEY         Your OpenAI API key
-  SHOPIFY_STORE          Your store URL (e.g., my-store.myshopify.com)
-  SHOPIFY_ACCESS_TOKEN   Shopify Admin API access token
+Filter Environment Variables:
+  PRODUCT_FILTER          all_active, all_products, needs_description,
+                          short_description, by_type, by_vendor, by_tag
+  FILTER_PRODUCT_TYPE     Product type to filter by
+  FILTER_VENDOR           Vendor name to filter by
+  FILTER_TAG              Tag to filter by
+  INCLUDE_DRAFTS          true/false - include draft products
+  MIN_DESCRIPTION_LENGTH  Minimum chars for "has description" (default: 100)
         """
     )
     parser.add_argument(

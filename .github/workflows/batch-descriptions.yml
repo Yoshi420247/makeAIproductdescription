@@ -1,7 +1,6 @@
 name: Generate Product Descriptions (Batch)
 
 on:
-  # Run manually from GitHub Actions tab
   workflow_dispatch:
     inputs:
       action:
@@ -14,14 +13,54 @@ on:
           - status
           - download
 
-  # Or run on a schedule (optional - uncomment to enable)
-  # schedule:
-  #   - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
+      product_filter:
+        description: 'Which products to process'
+        required: true
+        default: 'all_active'
+        type: choice
+        options:
+          - all_active
+          - all_products
+          - needs_description
+          - short_description
+          - by_type
+          - by_vendor
+          - by_tag
+
+      product_type:
+        description: 'Product type (only if filter = by_type)'
+        required: false
+        type: string
+        default: ''
+
+      vendor:
+        description: 'Vendor name (only if filter = by_vendor)'
+        required: false
+        type: string
+        default: ''
+
+      tag:
+        description: 'Tag to filter by (only if filter = by_tag)'
+        required: false
+        type: string
+        default: ''
+
+      include_drafts:
+        description: 'Include draft products?'
+        required: false
+        type: boolean
+        default: false
+
+      min_description_length:
+        description: 'Min chars to consider "needs description" (default: 100)'
+        required: false
+        type: string
+        default: '100'
 
 jobs:
   batch-process:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -34,25 +73,31 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install openai requests python-dotenv
+          pip install requests
 
       - name: Run batch processor
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          PRODUCT_FILTER: ${{ github.event.inputs.product_filter }}
+          FILTER_PRODUCT_TYPE: ${{ github.event.inputs.product_type }}
+          FILTER_VENDOR: ${{ github.event.inputs.vendor }}
+          FILTER_TAG: ${{ github.event.inputs.tag }}
+          INCLUDE_DRAFTS: ${{ github.event.inputs.include_drafts }}
+          MIN_DESCRIPTION_LENGTH: ${{ github.event.inputs.min_description_length }}
         run: |
-          python batch-processing/batch_processor.py ${{ github.event.inputs.action || 'status' }}
+          python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 
-      - name: Save batch ID (if submit)
+      - name: Upload batch ID
         if: github.event.inputs.action == 'submit'
         uses: actions/upload-artifact@v4
         with:
           name: batch-id
           path: batch_id.txt
-          retention-days: 7
+          retention-days: 30
 
-      - name: Download batch ID (if status/download)
+      - name: Download batch ID
         if: github.event.inputs.action != 'submit'
         uses: actions/download-artifact@v4
         with:
