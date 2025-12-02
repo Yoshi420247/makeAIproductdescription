@@ -581,13 +581,34 @@ def preview_results():
     )
     batch = response.json()
 
-    if batch.get("status") != "completed":
-        print(f"❌ Batch not ready. Status: {batch.get('status')}")
+    # Show detailed status
+    status = batch.get("status", "unknown")
+    print(f"   Status: {status}")
+    if batch.get("request_counts"):
+        counts = batch.get("request_counts", {})
+        print(f"   Total: {counts.get('total', 0)}, Completed: {counts.get('completed', 0)}, Failed: {counts.get('failed', 0)}")
+
+    if status == "failed":
+        print(f"❌ Batch failed!")
+        if batch.get("errors"):
+            print(f"   Errors: {batch.get('errors')}")
+        return
+
+    if status == "expired":
+        print(f"❌ Batch expired! OpenAI batches expire after 24 hours.")
+        print(f"   Please run a new 'submit' action to create a fresh batch.")
+        return
+
+    if status not in ["completed"]:
+        print(f"⏳ Batch not ready yet. Current status: {status}")
+        print(f"   Try again in a few minutes.")
         return
 
     output_file_id = batch.get("output_file_id")
     if not output_file_id:
-        print("❌ No output file found.")
+        print("❌ No output file found (batch completed but no results).")
+        if batch.get("error_file_id"):
+            print(f"   Error file exists - check errors. ID: {batch.get('error_file_id')}")
         return
 
     # Download results
