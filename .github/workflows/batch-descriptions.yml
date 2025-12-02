@@ -1,0 +1,60 @@
+name: Generate Product Descriptions (Batch)
+
+on:
+  # Run manually from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'submit'
+        type: choice
+        options:
+          - submit
+          - status
+          - download
+
+  # Or run on a schedule (optional - uncomment to enable)
+  # schedule:
+  #   - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
+
+jobs:
+  batch-process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install openai requests python-dotenv
+
+      - name: Run batch processor
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+        run: |
+          python batch-processing/batch_processor.py ${{ github.event.inputs.action || 'status' }}
+
+      - name: Save batch ID (if submit)
+        if: github.event.inputs.action == 'submit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch-id
+          path: batch_id.txt
+          retention-days: 7
+
+      - name: Download batch ID (if status/download)
+        if: github.event.inputs.action != 'submit'
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-id
+        continue-on-error: true
