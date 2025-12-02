@@ -11,6 +11,7 @@ on:
         options:
           - submit
           - status
+          - preview
           - download
 
       product_filter:
@@ -51,11 +52,17 @@ on:
         type: boolean
         default: false
 
-      min_description_length:
-        description: 'Min chars to consider "needs description" (default: 100)'
+      dry_run:
+        description: 'Dry run - preview only, do NOT update Shopify'
+        required: false
+        type: boolean
+        default: false
+
+      sample_count:
+        description: 'Number of samples to show in preview (default: 5)'
         required: false
         type: string
-        default: '100'
+        default: '5'
 
 jobs:
   batch-process:
@@ -75,6 +82,13 @@ jobs:
         run: |
           pip install requests
 
+      - name: Download batch ID (if not submit)
+        if: github.event.inputs.action != 'submit'
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-id
+        continue-on-error: true
+
       - name: Run batch processor
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -85,7 +99,8 @@ jobs:
           FILTER_VENDOR: ${{ github.event.inputs.vendor }}
           FILTER_TAG: ${{ github.event.inputs.tag }}
           INCLUDE_DRAFTS: ${{ github.event.inputs.include_drafts }}
-          MIN_DESCRIPTION_LENGTH: ${{ github.event.inputs.min_description_length }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 
@@ -97,9 +112,13 @@ jobs:
           path: batch_id.txt
           retention-days: 30
 
-      - name: Download batch ID
-        if: github.event.inputs.action != 'submit'
-        uses: actions/download-artifact@v4
+      - name: Upload preview report
+        if: github.event.inputs.action == 'preview' || github.event.inputs.action == 'download'
+        uses: actions/upload-artifact@v4
         with:
-          name: batch-id
-        continue-on-error: true
+          name: description-preview
+          path: |
+            preview_report.html
+            batch_results.jsonl
+          retention-days: 7
+          if-no-files-found: ignore

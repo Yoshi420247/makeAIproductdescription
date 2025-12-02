@@ -8,20 +8,13 @@ Process hundreds or thousands of Shopify products simultaneously.
 Usage:
     python batch_processor.py submit    # Create batch from Shopify products
     python batch_processor.py status    # Check batch status
-    python batch_processor.py download  # Download and apply results
+    python batch_processor.py preview   # Preview descriptions WITHOUT updating Shopify
+    python batch_processor.py download  # Download and apply to Shopify
 
 Environment Variables Required:
     OPENAI_API_KEY        - Your OpenAI API key
     SHOPIFY_STORE         - Your store (e.g., oil-slick-pad.myshopify.com)
     SHOPIFY_ACCESS_TOKEN  - Shopify Admin API access token
-
-Optional Filter Variables:
-    PRODUCT_FILTER        - all_active, all_products, needs_description, short_description, by_type, by_vendor, by_tag
-    FILTER_PRODUCT_TYPE   - Filter by product type (when PRODUCT_FILTER=by_type)
-    FILTER_VENDOR         - Filter by vendor (when PRODUCT_FILTER=by_vendor)
-    FILTER_TAG            - Filter by tag (when PRODUCT_FILTER=by_tag)
-    INCLUDE_DRAFTS        - Include draft products (true/false)
-    MIN_DESCRIPTION_LENGTH - Minimum chars to consider "has description" (default: 100)
 """
 
 import os
@@ -30,6 +23,8 @@ import time
 import argparse
 import requests
 from pathlib import Path
+from datetime import datetime
+from html import escape
 
 # === CONFIGURATION ===
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -44,9 +39,14 @@ FILTER_TAG = os.environ.get("FILTER_TAG", "")
 INCLUDE_DRAFTS = os.environ.get("INCLUDE_DRAFTS", "false").lower() == "true"
 MIN_DESCRIPTION_LENGTH = int(os.environ.get("MIN_DESCRIPTION_LENGTH", "100"))
 
+# Preview/dry-run options
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+SAMPLE_COUNT = int(os.environ.get("SAMPLE_COUNT", "5"))
+
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
+PREVIEW_FILE = "preview_report.html"
 
 # === SYSTEM PROMPT (GPT-5.1 Optimized) ===
 SYSTEM_PROMPT = """You are an expert e-commerce copywriter for Oil Slick. Write product descriptions that sound genuinely human and helpful.
@@ -96,16 +96,11 @@ def check_env():
 
     if missing:
         print(f"❌ Missing environment variables: {', '.join(missing)}")
-        print("\nSet them in your environment or GitHub Secrets:")
-        print("  OPENAI_API_KEY=sk-...")
-        print("  SHOPIFY_STORE=your-store.myshopify.com")
-        print("  SHOPIFY_ACCESS_TOKEN=shpat_...")
         exit(1)
 
 
 def get_shopify_products():
     """Fetch products from Shopify based on filter settings."""
-
     print(f"\n📋 FILTER SETTINGS:")
     print(f"   Filter: {PRODUCT_FILTER}")
     if FILTER_PRODUCT_TYPE:
@@ -115,24 +110,13 @@ def get_shopify_products():
     if FILTER_TAG:
         print(f"   Tag: {FILTER_TAG}")
     print(f"   Include Drafts: {INCLUDE_DRAFTS}")
-    print(f"   Min Description Length: {MIN_DESCRIPTION_LENGTH}")
     print()
 
-    # Build API parameters
     params = {"limit": 250}
-
-    # Status filter
-    if PRODUCT_FILTER == "all_products" or INCLUDE_DRAFTS:
-        # Don't filter by status - get everything
-        pass
-    else:
+    if PRODUCT_FILTER != "all_products" and not INCLUDE_DRAFTS:
         params["status"] = "active"
-
-    # Type filter (API level)
     if PRODUCT_FILTER == "by_type" and FILTER_PRODUCT_TYPE:
         params["product_type"] = FILTER_PRODUCT_TYPE
-
-    # Vendor filter (API level)
     if PRODUCT_FILTER == "by_vendor" and FILTER_VENDOR:
         params["vendor"] = FILTER_VENDOR
 
@@ -145,7 +129,6 @@ def get_shopify_products():
     while url:
         print(f"  Fetching page {page}...")
         response = requests.get(url, headers=headers, params=params)
-
         if response.status_code != 200:
             print(f"❌ Shopify API error: {response.status_code}")
             print(response.text)
@@ -156,7 +139,6 @@ def get_shopify_products():
         all_products.extend(products)
         print(f"  Got {len(products)} products (total: {len(all_products)})")
 
-        # Handle pagination via Link header
         link_header = response.headers.get("Link", "")
         url = None
         if 'rel="next"' in link_header:
@@ -164,78 +146,51 @@ def get_shopify_products():
                 if 'rel="next"' in link:
                     url = link.split(";")[0].strip("<> ")
                     page += 1
-        params = {}  # Clear params for paginated requests
+        params = {}
 
     print(f"✓ Fetched {len(all_products)} products from Shopify")
-
-    # Apply additional filters
-    filtered_products = apply_filters(all_products)
-
-    return filtered_products
+    return apply_filters(all_products)
 
 
 def apply_filters(products):
-    """Apply additional filters that can't be done at API level."""
-
-    original_count = len(products)
+    """Apply additional filters."""
     filtered = products
 
-    # Filter by tag
     if PRODUCT_FILTER == "by_tag" and FILTER_TAG:
         tag_lower = FILTER_TAG.lower()
-        filtered = [
-            p for p in filtered
-            if tag_lower in (p.get("tags", "") or "").lower()
-        ]
+        filtered = [p for p in filtered if tag_lower in (p.get("tags", "") or "").lower()]
         print(f"  Filtered by tag '{FILTER_TAG}': {len(filtered)} products")
 
-    # Filter: needs description (empty or very short)
     if PRODUCT_FILTER == "needs_description":
-        filtered = [
-            p for p in filtered
-            if not p.get("body_html") or len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH
-        ]
+        filtered = [p for p in filtered if not p.get("body_html") or len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH]
         print(f"  Filtered to products needing descriptions: {len(filtered)} products")
 
-    # Filter: short description (has some content but below threshold)
     if PRODUCT_FILTER == "short_description":
-        filtered = [
-            p for p in filtered
-            if p.get("body_html") and 0 < len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH
-        ]
-        print(f"  Filtered to products with short descriptions: {len(filtered)} products")
+        filtered = [p for p in filtered if p.get("body_html") and 0 < len(p.get("body_html", "").strip()) < MIN_DESCRIPTION_LENGTH]
+        print(f"  Filtered to short descriptions: {len(filtered)} products")
 
-    # Exclude drafts if not included
     if not INCLUDE_DRAFTS and PRODUCT_FILTER != "all_products":
         filtered = [p for p in filtered if p.get("status") != "draft"]
-
-    if len(filtered) != original_count:
-        print(f"  Final count after filters: {len(filtered)} products (from {original_count})")
 
     return filtered
 
 
 def create_batch_request(product):
     """Create a single batch request for a product."""
-    # Safely extract product data
     title = product.get('title', 'Unknown Product')
     product_type = product.get('product_type', '')
     tags = product.get('tags', '')
     body_html = product.get('body_html', '') or ''
     vendor = product.get('vendor', '')
 
-    # Truncate long descriptions
     if len(body_html) > 1000:
         body_html = body_html[:1000] + "..."
 
-    # Format options and variants
     options = product.get('options', [])
     options_str = ", ".join([o.get('name', '') for o in options]) if options else "None"
 
     variants = product.get('variants', [])
-    variants_summary = []
-    for v in variants[:5]:  # Limit to first 5 variants
-        variants_summary.append(f"{v.get('title', '')}: ${v.get('price', '0')}")
+    variants_summary = [f"{v.get('title', '')}: ${v.get('price', '0')}" for v in variants[:5]]
     variants_str = "; ".join(variants_summary) if variants_summary else "Single variant"
 
     user_content = f"""Write a product description for:
@@ -269,15 +224,11 @@ Return JSON only: {{"ai_body_html": "..."}}"""
 def submit_batch():
     """Create and submit a batch job to OpenAI."""
     check_env()
-
     print("\n📦 STEP 1: Fetching products from Shopify...")
     products = get_shopify_products()
 
     if not products:
         print("❌ No products found matching your filters!")
-        print("\nTry adjusting your filter settings:")
-        print("  - PRODUCT_FILTER: all_active, all_products, needs_description, etc.")
-        print("  - INCLUDE_DRAFTS: true/false")
         return
 
     print(f"\n📝 STEP 2: Creating batch file with {len(products)} requests...")
@@ -311,15 +262,8 @@ def submit_batch():
     print("\n🚀 STEP 4: Creating batch job...")
     response = requests.post(
         "https://api.openai.com/v1/batches",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "input_file_id": file_id,
-            "endpoint": "/v1/chat/completions",
-            "completion_window": "24h"
-        }
+        headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+        json={"input_file_id": file_id, "endpoint": "/v1/chat/completions", "completion_window": "24h"}
     )
 
     if response.status_code != 200:
@@ -330,11 +274,9 @@ def submit_batch():
     batch_data = response.json()
     batch_id = batch_data["id"]
 
-    # Save batch ID
     with open(BATCH_ID_FILE, "w") as f:
         f.write(batch_id)
 
-    # Estimate cost (rough: ~$0.025 per product at ~2K tokens output)
     estimated_cost = len(products) * 0.025
 
     print(f"""
@@ -345,16 +287,13 @@ def submit_batch():
 ║  Products:      {len(products):<48} ║
 ║  Filter:        {PRODUCT_FILTER:<48} ║
 ║  Est. Cost:     ~${estimated_cost:.2f} (50% off regular API){' ':<21} ║
-║  Status:        {batch_data.get('status', 'unknown'):<48} ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  NEXT STEPS:                                                     ║
-║  1. Wait 1-4 hours for processing                                ║
-║  2. Run with action: status                                      ║
-║  3. When complete, run with action: download                     ║
+║  1. Wait for processing (check with action: status)              ║
+║  2. Preview results (action: preview)                            ║
+║  3. Apply to Shopify (action: download)                          ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
-
-    # Print batch ID prominently for easy copying
     print(f"BATCH_ID: {batch_id}")
 
 
@@ -378,27 +317,16 @@ def check_status():
 
     if response.status_code != 200:
         print(f"❌ Failed to get batch status: {response.status_code}")
-        print(response.text)
         return None
 
     batch = response.json()
-
-    # Calculate progress
     counts = batch.get("request_counts", {})
     total = counts.get("total", 0)
     completed = counts.get("completed", 0)
     failed = counts.get("failed", 0)
     progress = (completed / total * 100) if total > 0 else 0
 
-    status_emoji = {
-        "validating": "🔄",
-        "in_progress": "⏳",
-        "finalizing": "📦",
-        "completed": "✅",
-        "failed": "❌",
-        "expired": "⚠️",
-        "cancelled": "🚫"
-    }.get(batch.get("status", ""), "❓")
+    status_emoji = {"validating": "🔄", "in_progress": "⏳", "finalizing": "📦", "completed": "✅", "failed": "❌", "expired": "⚠️"}.get(batch.get("status", ""), "❓")
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
@@ -406,14 +334,14 @@ def check_status():
 ╠══════════════════════════════════════════════════════════════════╣
 ║  Batch ID:    {batch_id:<50} ║
 ║  Status:      {status_emoji} {batch.get('status', 'unknown'):<48} ║
-║  Progress:    {completed}/{total} requests ({progress:.1f}% complete){' ':<21} ║
+║  Progress:    {completed}/{total} ({progress:.1f}% complete){' ':<27} ║
 ║  Failed:      {failed:<50} ║""")
 
     if batch.get("status") == "completed":
         print(f"""╠══════════════════════════════════════════════════════════════════╣
-║  Output File: {batch.get('output_file_id', 'N/A'):<50} ║
-╠══════════════════════════════════════════════════════════════════╣
-║  ✅ READY! Run with action: download                             ║
+║  ✅ READY!                                                        ║
+║  → Run 'preview' to see samples before applying                  ║
+║  → Run 'download' to apply all to Shopify                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
     elif batch.get("status") == "in_progress":
@@ -421,19 +349,309 @@ def check_status():
 ║  ⏳ Still processing... Check again in a few minutes.            ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
-    elif batch.get("status") == "failed":
-        errors = batch.get("errors", {}).get("data", [])
-        print(f"""╠══════════════════════════════════════════════════════════════════╣
-║  ❌ BATCH FAILED                                                  ║""")
-        for err in errors[:3]:
-            print(f"║  Error: {str(err)[:56]:<56} ║")
-        print(f"""╚══════════════════════════════════════════════════════════════════╝
-""")
     else:
         print(f"""╚══════════════════════════════════════════════════════════════════╝
 """)
 
     return batch
+
+
+def generate_preview_html(results, sample_count=5):
+    """Generate an HTML preview report."""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Description Preview</title>
+    <style>
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }}
+        .header h1 {{ margin: 0 0 10px 0; }}
+        .stats {{
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }}
+        .stat {{
+            background: rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 5px;
+        }}
+        .product {{
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        .product-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }}
+        .product-title {{
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #333;
+        }}
+        .product-id {{
+            color: #888;
+            font-size: 0.9em;
+        }}
+        .description {{
+            line-height: 1.6;
+            color: #444;
+        }}
+        .description h2 {{
+            color: #667eea;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }}
+        .description h3 {{
+            color: #764ba2;
+        }}
+        .description ul, .description ol {{
+            padding-left: 25px;
+        }}
+        .description li {{
+            margin-bottom: 8px;
+        }}
+        .description table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }}
+        .description th, .description td {{
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }}
+        .description th {{
+            background: #f8f9fa;
+        }}
+        .word-count {{
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+        }}
+        .error {{
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 5px;
+        }}
+        .footer {{
+            text-align: center;
+            color: #888;
+            padding: 30px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Product Description Preview</h1>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <div class="stats">
+            <div class="stat">📦 Total Products: {len(results)}</div>
+            <div class="stat">👀 Showing: {min(sample_count, len(results))} samples</div>
+        </div>
+    </div>
+"""
+
+    shown = 0
+    for result in results:
+        if shown >= sample_count:
+            break
+
+        product_id = result.get("custom_id", "Unknown")
+
+        # Check for errors
+        if result.get("error"):
+            html += f"""
+    <div class="product">
+        <div class="product-header">
+            <span class="product-title">Product ID: {product_id}</span>
+        </div>
+        <div class="error">❌ Error: {escape(str(result.get('error')))}</div>
+    </div>
+"""
+            shown += 1
+            continue
+
+        # Extract content
+        try:
+            response_body = result.get("response", {}).get("body", {})
+            choices = response_body.get("choices", [])
+            if not choices:
+                continue
+            content = choices[0].get("message", {}).get("content", "")
+            parsed = json.loads(content)
+            body_html = parsed.get("ai_body_html", "")
+
+            if len(body_html) < 100:
+                continue
+
+            word_count = len(body_html.split())
+
+            html += f"""
+    <div class="product">
+        <div class="product-header">
+            <span class="product-title">Product ID: {product_id}</span>
+            <span class="word-count">~{word_count} words</span>
+        </div>
+        <div class="description">
+            {body_html}
+        </div>
+    </div>
+"""
+            shown += 1
+        except Exception as e:
+            html += f"""
+    <div class="product">
+        <div class="product-header">
+            <span class="product-title">Product ID: {product_id}</span>
+        </div>
+        <div class="error">❌ Parse error: {escape(str(e))}</div>
+    </div>
+"""
+            shown += 1
+
+    html += """
+    <div class="footer">
+        <p>✅ If these look good, run the workflow with action: <strong>download</strong></p>
+        <p>🔄 To regenerate, submit a new batch</p>
+    </div>
+</body>
+</html>
+"""
+
+    return html
+
+
+def preview_results():
+    """Preview results without applying to Shopify."""
+    check_env()
+
+    if not Path(BATCH_ID_FILE).exists():
+        print("❌ No batch ID found. Run 'submit' first.")
+        return
+
+    with open(BATCH_ID_FILE) as f:
+        batch_id = f.read().strip()
+
+    # Check status
+    print("🔍 Checking batch status...")
+    response = requests.get(
+        f"https://api.openai.com/v1/batches/{batch_id}",
+        headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    )
+    batch = response.json()
+
+    if batch.get("status") != "completed":
+        print(f"❌ Batch not ready. Status: {batch.get('status')}")
+        return
+
+    output_file_id = batch.get("output_file_id")
+    if not output_file_id:
+        print("❌ No output file found.")
+        return
+
+    # Download results
+    print(f"\n📥 Downloading results...")
+    response = requests.get(
+        f"https://api.openai.com/v1/files/{output_file_id}/content",
+        headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    )
+
+    with open(RESULTS_FILE, "wb") as f:
+        f.write(response.content)
+
+    # Parse results
+    results = []
+    with open(RESULTS_FILE) as f:
+        for line in f:
+            results.append(json.loads(line))
+
+    print(f"✓ Downloaded {len(results)} results")
+
+    # Generate HTML preview
+    print(f"\n📄 Generating preview report (showing {SAMPLE_COUNT} samples)...")
+    html = generate_preview_html(results, SAMPLE_COUNT)
+
+    with open(PREVIEW_FILE, "w") as f:
+        f.write(html)
+
+    print(f"✓ Saved preview to {PREVIEW_FILE}")
+
+    # Show samples in console too
+    print(f"\n{'='*70}")
+    print("SAMPLE DESCRIPTIONS")
+    print('='*70)
+
+    shown = 0
+    for result in results:
+        if shown >= SAMPLE_COUNT:
+            break
+
+        product_id = result.get("custom_id", "Unknown")
+
+        try:
+            response_body = result.get("response", {}).get("body", {})
+            choices = response_body.get("choices", [])
+            if not choices:
+                continue
+            content = choices[0].get("message", {}).get("content", "")
+            parsed = json.loads(content)
+            body_html = parsed.get("ai_body_html", "")
+
+            if len(body_html) < 100:
+                continue
+
+            # Show first 500 chars
+            preview = body_html[:500].replace('\n', ' ')
+            word_count = len(body_html.split())
+
+            print(f"\n📦 Product ID: {product_id}")
+            print(f"   Words: ~{word_count}")
+            print(f"   Preview: {preview}...")
+            print("-" * 70)
+
+            shown += 1
+        except:
+            pass
+
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                    ✅ PREVIEW COMPLETE                           ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Total descriptions: {len(results):<44} ║
+║  Samples shown: {shown:<49} ║
+║  Full report: {PREVIEW_FILE:<50} ║
+╠══════════════════════════════════════════════════════════════════╣
+║  📥 Download the 'description-preview' artifact to view HTML     ║
+║  ✅ If satisfied, run with action: download                      ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
 
 
 def download_and_apply():
@@ -447,42 +665,51 @@ def download_and_apply():
     with open(BATCH_ID_FILE) as f:
         batch_id = f.read().strip()
 
-    # Check status first
+    # Check status
     print("🔍 Checking batch status...")
     response = requests.get(
         f"https://api.openai.com/v1/batches/{batch_id}",
         headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
     )
-
     batch = response.json()
 
     if batch.get("status") != "completed":
         print(f"❌ Batch not ready. Status: {batch.get('status')}")
-        print("Run with action 'status' to check progress.")
         return
 
     output_file_id = batch.get("output_file_id")
     if not output_file_id:
-        print("❌ No output file found in batch.")
+        print("❌ No output file found.")
         return
 
-    # Download results
-    print(f"\n📥 Downloading results from {output_file_id}...")
-    response = requests.get(
-        f"https://api.openai.com/v1/files/{output_file_id}/content",
-        headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
-    )
+    # Download if not already
+    if not Path(RESULTS_FILE).exists():
+        print(f"\n📥 Downloading results...")
+        response = requests.get(
+            f"https://api.openai.com/v1/files/{output_file_id}/content",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        )
+        with open(RESULTS_FILE, "wb") as f:
+            f.write(response.content)
 
-    if response.status_code != 200:
-        print(f"❌ Failed to download results: {response.status_code}")
+    # Check for dry run
+    if DRY_RUN:
+        print("\n🔒 DRY RUN MODE - Not updating Shopify")
+        print("   Set DRY_RUN=false to apply changes")
+
+        # Generate preview instead
+        results = []
+        with open(RESULTS_FILE) as f:
+            for line in f:
+                results.append(json.loads(line))
+
+        html = generate_preview_html(results, len(results))
+        with open(PREVIEW_FILE, "w") as f:
+            f.write(html)
+        print(f"   Generated full preview: {PREVIEW_FILE}")
         return
 
-    with open(RESULTS_FILE, "wb") as f:
-        f.write(response.content)
-
-    print(f"✓ Downloaded results to {RESULTS_FILE}")
-
-    # Parse and apply results
+    # Apply to Shopify
     print("\n🔄 Applying results to Shopify...")
 
     success_count = 0
@@ -501,18 +728,14 @@ def download_and_apply():
                 if (i + 1) % 10 == 0 or i == 0:
                     print(f"  Processing {i+1}/{total}...")
 
-                # Check for errors in the response
                 if result.get("error"):
-                    print(f"  ⚠️ API error for {product_id}: {result['error']}")
                     error_count += 1
                     continue
 
-                # Extract AI-generated HTML
                 response_body = result.get("response", {}).get("body", {})
                 choices = response_body.get("choices", [])
 
                 if not choices:
-                    print(f"  ⚠️ No choices in response for {product_id}")
                     error_count += 1
                     continue
 
@@ -522,21 +745,16 @@ def download_and_apply():
                     parsed = json.loads(content)
                     body_html = parsed.get("ai_body_html", "")
                 except json.JSONDecodeError:
-                    print(f"  ⚠️ Invalid JSON response for {product_id}")
                     error_count += 1
                     continue
 
                 if len(body_html) < 100:
-                    print(f"  ⚠️ Skipping {product_id}: Response too short")
                     skip_count += 1
                     continue
 
                 # Update Shopify
                 url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/products/{product_id}.json"
-                headers = {
-                    "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
-                    "Content-Type": "application/json"
-                }
+                headers = {"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN, "Content-Type": "application/json"}
                 payload = {"product": {"id": int(product_id), "body_html": body_html}}
 
                 response = requests.put(url, headers=headers, json=payload)
@@ -547,12 +765,19 @@ def download_and_apply():
                     error_count += 1
                     print(f"  ✗ Failed {product_id}: {response.status_code}")
 
-                # Rate limiting for Shopify API (2 requests/second limit)
-                time.sleep(0.5)
+                time.sleep(0.5)  # Rate limit
 
             except Exception as e:
                 error_count += 1
-                print(f"  ✗ Error: {e}")
+
+    # Generate preview for records
+    results = []
+    with open(RESULTS_FILE) as f:
+        for line in f:
+            results.append(json.loads(line))
+    html = generate_preview_html(results, len(results))
+    with open(PREVIEW_FILE, "w") as f:
+        f.write(html)
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
@@ -562,36 +787,15 @@ def download_and_apply():
 ║  ⚠️ Skipped (too short):   {skip_count:<42} ║
 ║  ✗ Errors:                {error_count:<42} ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Your Shopify products have been updated with AI descriptions!   ║
+║  📄 Full report saved: {PREVIEW_FILE:<41} ║
+║  🛍️ Your Shopify products have been updated!                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Parallel Product Description Generator using OpenAI Batch API",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python batch_processor.py submit     # Create batch from Shopify products
-  python batch_processor.py status     # Check batch status
-  python batch_processor.py download   # Download results and update Shopify
-
-Filter Environment Variables:
-  PRODUCT_FILTER          all_active, all_products, needs_description,
-                          short_description, by_type, by_vendor, by_tag
-  FILTER_PRODUCT_TYPE     Product type to filter by
-  FILTER_VENDOR           Vendor name to filter by
-  FILTER_TAG              Tag to filter by
-  INCLUDE_DRAFTS          true/false - include draft products
-  MIN_DESCRIPTION_LENGTH  Minimum chars for "has description" (default: 100)
-        """
-    )
-    parser.add_argument(
-        "command",
-        choices=["submit", "status", "download"],
-        help="Command to run: submit, status, or download"
-    )
+    parser = argparse.ArgumentParser(description="Parallel Product Description Generator")
+    parser.add_argument("command", choices=["submit", "status", "preview", "download"])
     args = parser.parse_args()
 
     print("""
@@ -605,6 +809,8 @@ Filter Environment Variables:
         submit_batch()
     elif args.command == "status":
         check_status()
+    elif args.command == "preview":
+        preview_results()
     elif args.command == "download":
         download_and_apply()
 
