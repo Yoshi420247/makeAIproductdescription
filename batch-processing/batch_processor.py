@@ -65,7 +65,7 @@ MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
 
 # Model configurations
 OPENAI_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for OpenAI
-CLAUDE_MODEL = "claude-sonnet-4-5-20250514"  # Claude Sonnet 4.5
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5
 
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
