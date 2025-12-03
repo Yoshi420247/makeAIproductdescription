@@ -228,7 +228,7 @@ AI-generated content fails when every product has identical structure. Vary your
 - Rename sections naturally: "How It Works" → "How to use it" or "The basics" or just skip if obvious
 - "Who This Is For" → "Best for" or "Made for" or weave into the intro
 - Merge small sections: "Limitations & Compatibility" can fold into specs for simple items
-- FAQ length varies: 3 questions for simple items, 5-7 for complex gear with real questions
+- FAQ length: 5-7 questions for all products — shoppers have questions, answer them thoroughly
 - Bullet counts vary: 4-8 depending on what's actually worth saying
 - Some products need more story in "How It Works", others just need a sentence
 
@@ -264,9 +264,9 @@ If you make this a section, call it "Best for" or "Made for" or work it into the
 Be specific: "dabbers running 3-4 sessions a day" not "regular users"
 "people with smaller hands" not "various hand sizes"
 
-## How It Works (vary length dramatically)
-Simple items: One paragraph or skip entirely. A carb cap doesn't need 200 words of explanation.
-Complex items: Full explanation with analogies. A recycler rig deserves the breakdown.
+## How It Works (always include, vary depth)
+Simple items: 2-3 paragraphs explaining use, tips, and context for the product category.
+Complex items: Full explanation with analogies, step-by-step when helpful.
 Call it "How to use it" or "The basics" or "How it works" — vary the heading.
 
 ## Specifications
@@ -282,12 +282,12 @@ For simple items, fold into specs or a quick note in the intro.
 For complex items with real compatibility concerns, make it a section.
 Be honest: "Best for daily drivers. If you're doing back-to-back dabs for hours, grab something beefier."
 
-## FAQ (3-7 questions, sound like real DMs)
+## FAQ (5-7 questions minimum, sound like real DMs)
 Questions should sound like actual customer messages, not perfect corporate FAQs:
 - "Will this fit my 14mm bong?" (real)
 - "What is the compatibility of this product with 14mm joints?" (robotic)
 
-Vary the count based on how many real questions exist for this product type.
+Every product should have 5-7 FAQs covering: sizing/fit, compatibility, care/cleaning, comparisons, use cases.
 
 # VOICE RULES
 
@@ -365,11 +365,11 @@ Keep cleaning instructions short and generic:
 - Keep it safe and simple
 
 # RULES
-- 600-1000 words depending on product complexity (simple items can be shorter)
+- 1,200-1,600 words minimum — comprehensive descriptions perform better for SEO and AI search
 - Never invent specs — only use what's in the product data
 - HTML tags: h2, h3, p, ul, ol, li, strong, em, table, tr, th, td, a (for internal links)
 - Dual units: "4.5 inches (114mm)"
-- No fluff padding — if you've said what needs saying, stop
+- Include thorough FAQ sections (5-7 questions), detailed feature explanations, and proper category context
 - MUST include 3-5 internal links, each to a DIFFERENT collection, one per paragraph max
 - Keep opening paragraph link-free — focus on product only
 """
