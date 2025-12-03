@@ -14,6 +14,7 @@ on:
           - preview
           - download
           - realtime
+          - realtime-live
           - apply
 
       model_provider:
@@ -140,7 +141,7 @@ jobs:
           retention-days: 30
 
       - name: Upload preview report
-        if: github.event.inputs.action == 'preview' || github.event.inputs.action == 'download' || github.event.inputs.action == 'realtime'
+        if: github.event.inputs.action == 'preview' || github.event.inputs.action == 'download' || github.event.inputs.action == 'realtime' || github.event.inputs.action == 'realtime-live'
         uses: actions/upload-artifact@v4
         with:
           name: description-preview
