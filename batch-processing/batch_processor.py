@@ -615,7 +615,13 @@ def submit_batch_openai(products):
         print(response.text)
         exit(1)
 
-    return response.json()["id"]
+    batch_id = response.json()["id"]
+
+    # Verify batch is actually processing
+    print("\n⏳ STEP 5: Verifying batch started processing...")
+    verify_batch_started(batch_id, is_claude=False)
+
+    return batch_id
 
 
 def submit_batch_claude(products):
@@ -646,7 +652,199 @@ def submit_batch_claude(products):
         print(response.text)
         exit(1)
 
-    return response.json()["id"]
+    batch_data = response.json()
+    batch_id = batch_data["id"]
+
+    # Verify batch is actually processing
+    print("\n⏳ STEP 4: Verifying batch started processing...")
+    verify_batch_started(batch_id, is_claude=True)
+
+    return batch_id
+
+
+def verify_batch_started(batch_id, is_claude=False, max_attempts=10, delay=3):
+    """Poll the batch status to verify it actually started processing."""
+    for attempt in range(max_attempts):
+        time.sleep(delay)
+
+        if is_claude:
+            response = requests.get(
+                f"https://api.anthropic.com/v1/messages/batches/{batch_id}",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01"
+                }
+            )
+        else:
+            response = requests.get(
+                f"https://api.openai.com/v1/batches/{batch_id}",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+            )
+
+        if response.status_code != 200:
+            print(f"   Attempt {attempt + 1}/{max_attempts}: Waiting for batch to initialize...")
+            continue
+
+        batch = response.json()
+
+        if is_claude:
+            status = batch.get("processing_status", "unknown")
+            counts = batch.get("request_counts", {})
+            total = counts.get("processing", 0) + counts.get("succeeded", 0) + counts.get("errored", 0)
+            errored = counts.get("errored", 0)
+
+            print(f"   Attempt {attempt + 1}: Status = {status}, Processing = {counts.get('processing', 0)}, Total tracked = {total}")
+
+            if status == "ended":
+                if errored > 0 or total == 0:
+                    print(f"\n❌ BATCH FAILED IMMEDIATELY!")
+                    print(f"   Status: {status}")
+                    print(f"   Request counts: {json.dumps(counts, indent=2)}")
+                    if batch.get("results_url"):
+                        print(f"\n   Downloading error details...")
+                        download_and_show_batch_errors(batch_id, is_claude=True)
+                    exit(1)
+                else:
+                    print(f"   ✓ Batch completed quickly (small batch)")
+                    return True
+            elif status == "in_progress":
+                print(f"   ✓ Batch confirmed processing!")
+                return True
+            elif status in ["canceling", "canceled"]:
+                print(f"\n❌ Batch was canceled!")
+                exit(1)
+        else:
+            status = batch.get("status", "unknown")
+            counts = batch.get("request_counts", {})
+            errors = batch.get("errors", {})
+
+            print(f"   Attempt {attempt + 1}: Status = {status}")
+
+            if status == "failed":
+                print(f"\n❌ BATCH FAILED!")
+                print(f"   Errors: {json.dumps(errors, indent=2) if errors else 'No error details'}")
+                if batch.get("error_file_id"):
+                    print(f"\n   Downloading error details...")
+                    download_and_show_batch_errors(batch_id, is_claude=False)
+                exit(1)
+            elif status == "expired":
+                print(f"\n❌ Batch expired before processing!")
+                exit(1)
+            elif status in ["in_progress", "finalizing"]:
+                print(f"   ✓ Batch confirmed processing!")
+                return True
+            elif status == "validating":
+                print(f"   Still validating...")
+                continue
+            elif status == "completed":
+                print(f"   ✓ Batch completed quickly (small batch)")
+                return True
+
+    print(f"\n⚠️ Could not confirm batch started after {max_attempts} attempts.")
+    print(f"   This doesn't mean it failed - check status manually with: python batch_processor.py status")
+    return False
+
+
+def download_and_show_batch_errors(batch_id, is_claude=False, max_errors=10):
+    """Download and display batch errors for debugging."""
+    if is_claude:
+        # Get results URL and download
+        response = requests.get(
+            f"https://api.anthropic.com/v1/messages/batches/{batch_id}",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01"
+            }
+        )
+        if response.status_code != 200:
+            print(f"   Could not fetch batch details: {response.status_code}")
+            return
+
+        batch = response.json()
+        results_url = batch.get("results_url")
+
+        if not results_url:
+            print(f"   No results URL available yet.")
+            print(f"   Full batch response: {json.dumps(batch, indent=2)}")
+            return
+
+        # Download results
+        results_response = requests.get(
+            results_url,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01"
+            }
+        )
+
+        if results_response.status_code != 200:
+            print(f"   Could not download results: {results_response.status_code}")
+            return
+
+        print(f"\n{'='*70}")
+        print(f"BATCH ERROR DETAILS (first {max_errors}):")
+        print('='*70)
+
+        error_count = 0
+        for line in results_response.text.strip().split('\n'):
+            if error_count >= max_errors:
+                break
+            try:
+                result = json.loads(line)
+                if result.get("result", {}).get("type") == "errored":
+                    error_count += 1
+                    custom_id = result.get("custom_id", "unknown")
+                    error = result.get("result", {}).get("error", {})
+                    print(f"\n  Product: {custom_id}")
+                    print(f"  Error Type: {error.get('type', 'N/A')}")
+                    print(f"  Message: {error.get('message', 'N/A')}")
+            except:
+                pass
+
+        if error_count == 0:
+            print("   No explicit errors found in results.")
+            print(f"   Sample result: {results_response.text[:500]}")
+        print('='*70)
+    else:
+        # OpenAI error file download
+        response = requests.get(
+            f"https://api.openai.com/v1/batches/{batch_id}",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        )
+        if response.status_code != 200:
+            print(f"   Could not fetch batch details: {response.status_code}")
+            return
+
+        batch = response.json()
+        error_file_id = batch.get("error_file_id")
+
+        if not error_file_id:
+            print(f"   No error file available.")
+            print(f"   Batch errors: {json.dumps(batch.get('errors', {}), indent=2)}")
+            return
+
+        error_response = requests.get(
+            f"https://api.openai.com/v1/files/{error_file_id}/content",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        )
+
+        print(f"\n{'='*70}")
+        print(f"BATCH ERROR DETAILS (first {max_errors}):")
+        print('='*70)
+
+        for i, line in enumerate(error_response.text.strip().split('\n')):
+            if i >= max_errors:
+                break
+            try:
+                error_data = json.loads(line)
+                custom_id = error_data.get("custom_id", "unknown")
+                error = error_data.get("error", {})
+                print(f"\n  Product: {custom_id}")
+                print(f"  Code: {error.get('code', 'N/A')}")
+                print(f"  Message: {error.get('message', 'N/A')}")
+            except:
+                print(f"   Raw: {line[:200]}")
+        print('='*70)
 
 
 def submit_batch():
@@ -796,7 +994,17 @@ def check_status():
 ║  Failed:      {failed:<50} ║""")
 
     if status in ["completed", "ended"]:
-        print(f"""╠══════════════════════════════════════════════════════════════════╣
+        if failed > 0:
+            print(f"""╠══════════════════════════════════════════════════════════════════╣
+║  ⚠️  COMPLETED WITH ERRORS                                        ║
+║  → {failed} requests failed - check error details below           ║
+║  → Run 'preview' to see successful results                       ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+            # Show error details
+            download_and_show_batch_errors(batch_id, is_claude=is_claude)
+        else:
+            print(f"""╠══════════════════════════════════════════════════════════════════╣
 ║  ✅ READY!                                                        ║
 ║  → Run 'preview' to see samples before applying                  ║
 ║  → Run 'download' to apply all to Shopify                        ║
@@ -807,9 +1015,36 @@ def check_status():
 ║  ⏳ Still processing... Check again in a few minutes.            ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
-    else:
-        print(f"""╚══════════════════════════════════════════════════════════════════╝
+    elif status == "failed":
+        print(f"""╠══════════════════════════════════════════════════════════════════╣
+║  ❌ BATCH FAILED!                                                 ║
+║  → The entire batch failed to process                            ║
+║  → Check error details below and resubmit                        ║
+╚══════════════════════════════════════════════════════════════════╝
 """)
+        # Show error details
+        download_and_show_batch_errors(batch_id, is_claude=is_claude)
+    elif status == "expired":
+        print(f"""╠══════════════════════════════════════════════════════════════════╣
+║  ⚠️  BATCH EXPIRED!                                               ║
+║  → OpenAI batches expire after 24 hours                          ║
+║  → Please run 'submit' to create a new batch                     ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+    elif status in ["canceled", "canceling"]:
+        print(f"""╠══════════════════════════════════════════════════════════════════╣
+║  ⛔ BATCH CANCELED                                                ║
+║  → The batch was canceled before completion                      ║
+║  → Please run 'submit' to create a new batch                     ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+    else:
+        print(f"""╠══════════════════════════════════════════════════════════════════╣
+║  ❓ Unknown status: {status:<44} ║
+║  → Raw batch data printed below for debugging                    ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+        print(f"\nRaw batch response:\n{json.dumps(batch_info.get('raw', {}), indent=2)}")
 
     return batch_info
 
