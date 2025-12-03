@@ -22,6 +22,7 @@ import json
 import time
 import argparse
 import requests
+import yaml
 from pathlib import Path
 from datetime import datetime
 from html import escape
@@ -70,6 +71,105 @@ CLAUDE_MODEL = "claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
 progress_count = 0
+
+# === BRAND GUIDE LOADING ===
+BRAND_GUIDE_PATH = Path(__file__).parent / "brand-guide.yaml"
+BRAND_GUIDE = None
+
+def load_brand_guide():
+    """Load the brand guide YAML file."""
+    global BRAND_GUIDE
+    if BRAND_GUIDE_PATH.exists():
+        try:
+            with open(BRAND_GUIDE_PATH, 'r') as f:
+                BRAND_GUIDE = yaml.safe_load(f)
+            print(f"✓ Loaded brand guide: {BRAND_GUIDE_PATH.name}")
+        except Exception as e:
+            print(f"⚠️ Could not load brand guide: {e}")
+            BRAND_GUIDE = None
+    else:
+        print(f"⚠️ Brand guide not found at {BRAND_GUIDE_PATH}")
+        BRAND_GUIDE = None
+
+
+def build_brand_context():
+    """Build a condensed brand context from the brand guide for the system prompt."""
+    if not BRAND_GUIDE:
+        return ""
+
+    context_parts = []
+
+    # Brand positioning
+    site_profile = BRAND_GUIDE.get("site_profile", {})
+    brand = site_profile.get("brand", {})
+    if brand:
+        context_parts.append(f"""
+# BRAND CONTEXT: {brand.get('name', 'Oil Slick')}
+Tagline: "{brand.get('tagline', '')}"
+Positioning: {brand.get('positioning', '').strip()}
+""")
+
+    # Key brand traits
+    traits = brand.get("key_brand_traits", [])
+    if traits:
+        context_parts.append("Key brand traits:\n" + "\n".join(f"- {t}" for t in traits))
+
+    # Target audiences
+    audiences = site_profile.get("audiences", {})
+    primary = audiences.get("primary", [])
+    if primary:
+        context_parts.append("\n# TARGET AUDIENCES")
+        for aud in primary:
+            context_parts.append(f"- {aud.get('id', '').replace('_', ' ').title()}: {aud.get('description', '').strip()}")
+
+    # Tone of voice
+    tone = audiences.get("tone_of_voice", {})
+    if tone:
+        core = tone.get("core", [])
+        avoid = tone.get("avoid", [])
+        if core or avoid:
+            context_parts.append("\n# TONE OF VOICE")
+            if core:
+                context_parts.append("Be: " + ", ".join(core))
+            if avoid:
+                context_parts.append("Avoid: " + ", ".join(avoid))
+
+    # Architecture pillars for internal linking suggestions
+    architecture = BRAND_GUIDE.get("architecture", {})
+    pillars = architecture.get("pillars", [])
+    if pillars:
+        context_parts.append("\n# SITE ARCHITECTURE (for internal linking)")
+        for pillar in pillars:
+            label = pillar.get("label", "")
+            desc = pillar.get("description", "").strip()[:150]
+            keywords = pillar.get("key_keywords", [])[:5]
+            if label:
+                line = f"- {label}: {desc}..."
+                if keywords:
+                    line += f" Keywords: {', '.join(keywords)}"
+                context_parts.append(line)
+
+    # Safety and compliance (critical)
+    safety = BRAND_GUIDE.get("safety_and_compliance", {})
+    constraints = safety.get("constraints_for_llm", {})
+    if constraints:
+        context_parts.append("\n# SAFETY & COMPLIANCE RULES (MANDATORY)")
+        for category, rules in constraints.items():
+            if isinstance(rules, list):
+                for rule in rules:
+                    context_parts.append(f"- {rule.strip()}")
+
+    # SEO semantic clusters
+    seo = BRAND_GUIDE.get("seo_semantics", {})
+    clusters = seo.get("semantic_clusters", {})
+    if clusters:
+        context_parts.append("\n# KEYWORD CLUSTERS (use naturally)")
+        for cluster_name, cluster_data in clusters.items():
+            includes = cluster_data.get("includes", [])
+            if includes:
+                context_parts.append(f"- {cluster_name.replace('_', ' ').title()}: {', '.join(includes[:6])}")
+
+    return "\n".join(context_parts)
 
 
 def get_batch_id():
@@ -207,6 +307,14 @@ Mix it up:
 """
 
 
+def get_full_system_prompt():
+    """Get the full system prompt including brand context."""
+    brand_context = build_brand_context()
+    if brand_context:
+        return SYSTEM_PROMPT + "\n\n" + brand_context
+    return SYSTEM_PROMPT
+
+
 def check_env():
     """Verify all required environment variables are set."""
     missing = []
@@ -227,6 +335,9 @@ def check_env():
     if missing:
         print(f"❌ Missing environment variables: {', '.join(missing)}")
         exit(1)
+
+    # Load brand guide
+    load_brand_guide()
 
     print(f"🤖 Using model provider: {MODEL_PROVIDER.upper()}")
     if MODEL_PROVIDER == "claude":
@@ -350,6 +461,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
 def create_batch_request_openai(product):
     """Create an OpenAI batch request for a product."""
     user_content = build_product_prompt(product)
+    system_prompt = get_full_system_prompt()
 
     return {
         "custom_id": str(product["id"]),
@@ -360,7 +472,7 @@ def create_batch_request_openai(product):
             "response_format": {"type": "json_object"},
             "max_tokens": 16000,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ]
         }
@@ -370,13 +482,14 @@ def create_batch_request_openai(product):
 def create_batch_request_claude(product):
     """Create a Claude batch request for a product."""
     user_content = build_product_prompt(product)
+    system_prompt = get_full_system_prompt()
 
     return {
         "custom_id": str(product["id"]),
         "params": {
             "model": CLAUDE_MODEL,
             "max_tokens": 16000,
-            "system": SYSTEM_PROMPT,
+            "system": system_prompt,
             "messages": [
                 {"role": "user", "content": user_content}
             ]
@@ -1134,6 +1247,8 @@ Current Description: {body_html if body_html else '(none)'}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
 
+    system_prompt = get_full_system_prompt()
+
     try:
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
@@ -1146,7 +1261,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "response_format": {"type": "json_object"},
                 "max_completion_tokens": 16000,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ]
             },
@@ -1221,6 +1336,8 @@ Current Description: {body_html if body_html else '(none)'}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
 
+    system_prompt = get_full_system_prompt()
+
     try:
         response = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -1232,7 +1349,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
             json={
                 "model": CLAUDE_MODEL,
                 "max_tokens": 16000,
-                "system": SYSTEM_PROMPT,
+                "system": system_prompt,
                 "messages": [
                     {"role": "user", "content": user_content}
                 ]

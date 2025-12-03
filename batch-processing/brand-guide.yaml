@@ -1,0 +1,628 @@
+version: "1.0"
+
+project:
+  name: "Oil Slick Shopify Listing System"
+  domain: "https://oilslickpad.com"
+  description: >
+    Configuration and instructions for an LLM that writes and optimizes Shopify
+    product listings, collection copy, and internal linking for oilslickpad.com.
+    Focus is on cannabis-adjacent products: silicone pads and mats, PTFE/FEP
+    films and papers, cannabis packaging (jars, mylar-style bags, joint tubes),
+    and smokeshop hardware (pipes, bongs, rigs, nectar collectors, accessories).
+  primary_goals:
+    - "Increase organic search traffic and conversion for key product pillars."
+    - "Align every listing with the site's existing navigation and collection architecture."
+    - "Use language and structure that works well for both human shoppers and LLM-based search."
+    - "Respect safety and compliance: no detailed instructions for drug production or consumption."
+
+site_profile:
+  brand:
+    name: "Oil Slick"
+    tagline: "Tools to help you concentrate"
+    positioning: >
+      Oil Slick makes extraction materials, nonstick surfaces, and durable
+      smokeshop gear for processors, dabbers, and smokers who need reliable,
+      easy-to-clean equipment, packaging, and work surfaces.
+    key_brand_traits:
+      - "Expert in nonstick silicone pads and mats for dabbing and sticky work."
+      - "Specialist in cannabis flower and concentrate packaging: heavy-bottom glass jars, CR options, nonstick packaging."
+      - "Provider of durable silicone pipes, bongs, rigs, and smokeshop accessories."
+      - "Trusted by labs and enthusiasts; referenced as the official manufacturer on external sites."
+  audiences:
+    primary:
+      - id: "processors_and_extractors"
+        description: >
+          Licensed labs and serious home enthusiasts who make or handle rosin,
+          solventless extracts, BHO, hash, or other concentrates, and need safe,
+          reliable materials for pressing, drying, packaging, and staging.
+      - id: "concentrate_consumers"
+        description: >
+          Dabbers and enthusiasts who use rigs, bangers, nectar collectors, and
+          nonstick pads, and who care about preserving every drop and keeping
+          their space clean.
+      - id: "cannabis_brands_and_retailers"
+        description: >
+          Brands, growers, and dispensaries needing compliant flower and
+          concentrate packaging, especially heavy-bottom jars and child-resistant
+          containers that showcase product while staying regulation-ready.
+      - id: "general_smokers"
+        description: >
+          People who want unbreakable or durable pipes, bongs, silicone
+          smokeware, grinders, papers, and general smokeshop accessories.
+    tone_of_voice:
+      core:
+        - "Practical and helpful"
+        - "Knowledgeable but not snobby"
+        - "Technically accurate about materials"
+        - "Casual, approachable, and stoner-/lab-friendly without being juvenile"
+      avoid:
+        - "Overly medical or clinical tone"
+        - "Overly edgy or illegal-sounding language"
+        - "Slang-heavy or meme-heavy writing"
+
+search_insights:
+  # These are here to guide keyword choices and emphasis.
+  brand_queries:
+    - "oil slick"
+    - "oilslick"
+    - "oil slick pad"
+    - "oil slick paper"
+    - "oil slick mat"
+    - "oilslickpad.com"
+  nonbrand_queries_packaging:
+    - "rosin jars"
+    - "concentrate jar"
+    - "concentrate containers"
+    - "glass concentrate containers"
+    - "child resistant jars"
+    - "silicone release paper"
+    - "slick paper silicone release paper"
+  nonbrand_queries_smokeshop:
+    - "mason jar bong"
+    - "silicone dab rig"
+    - "silicone dab rigs"
+    - "silicone bong"
+    - "silicone bongs"
+    - "best silicone bongs"
+    - "electric nectar collector with bubbler"
+    - "dab mat"
+  informational_queries:
+    - "how to clean a silicone bong"
+    - "how to clean silicone bong"
+    - "how to clean silicone bongs"
+    - "how to clean silicone pipe"
+    - "best concentrate jar"
+    - "silicone mats for dabs"
+    - "ptfe in cannabis"
+  search_usage_guidelines:
+    - >
+      When writing titles, subtitles, and H1 copy, it is good to include at
+      least one natural phrase from the relevant query clusters if it fits
+      without sounding forced (e.g., "rosin jars", "silicone dab rig", "dab mat").
+    - >
+      Do not stuff keywords. One or two well-placed phrases per section is
+      enough. Prioritize clarity over exact-match repetition.
+    - >
+      Treat brand terms like "Oil Slick", "Slick Pad", "Oil Slickr Paper" as
+      primary entities that should appear early in titles and first paragraphs.
+
+architecture:
+  # This section describes the collection-level architecture the LLM should respect.
+  pillars:
+    - id: "nonstick_pads_and_mats"
+      label: "Silicone Pads / Dabbing"
+      primary_collection_url: "https://oilslickpad.com/collections/dabbing"
+      description: >
+        This is the core home for Slick® silicone pads, dab mats, and nonstick
+        work surfaces that live under rigs, bongs, and concentrate stations.
+        Historically one of the strongest-performing areas of the site.
+      includes_products_like:
+        - "Slick® Pad"
+        - "Slick® Slab"
+        - "Slick® Duo"
+        - "Canvas series dab pads and mood mats"
+      key_keywords:
+        - "dab pad"
+        - "dab mat"
+        - "silicone mat for dabs"
+        - "nonstick silicone pad"
+      content_hubs_to_link_from:
+        - topic: "silicone mats for dabs"
+          type: "blog"
+        - topic: "beyond baking: silicone pads in the cannabis world"
+          type: "blog"
+      llm_rules:
+        - "Every pad/mat product description should clearly state that it is a nonstick silicone work surface, its size, and main use cases."
+        - "Use FAQs and structure modeled loosely on the existing Slick® Pad product page."
+
+    - id: "rosin_and_extraction_nonstick"
+      label: "Rosin Extraction & Nonstick Papers"
+      primary_collections:
+        - url: "https://oilslickpad.com/collections/parchment-papers"
+          label: "Parchment Papers"
+        - url: "https://oilslickpad.com/collections/rosin-extraction"
+          label: "Rosin Extraction"
+        - url: "https://oilslickpad.com/collections/non-stick-paper-and-ptfe"
+          label: "Non-stick Paper & PTFE"
+        - url: "https://oilslickpad.com/collections/bulk-ptfe-fep"
+          label: "Bulk PTFE & FEP"
+      description: >
+        These collections cover silicone-coated papers, release liners, PTFE and
+        FEP sheets/films used for pressing rosin, drying solventless extracts,
+        handling kief/hydrocarbon extracts, and packaging concentrates in a
+        nonstick way.
+      includes_products_like:
+        - "Oil Slickr Paper for Rosin and Storage"
+        - "Oil Slickr Wrap (foil-backed parchment)"
+        - "Bulk PTFE film rolls"
+        - "Clear FEP squares and rolls"
+      key_keywords:
+        - "rosin parchment paper"
+        - "silicone release paper"
+        - "slick paper"
+        - "PTFE for cannabis"
+        - "FEP film"
+      llm_rules:
+        - >
+          Emphasize nonstick properties, thermal stability, and compatibility
+          with sticky concentrates. Mention use cases like pressing rosin,
+          drying hash, and short-term packaging, but do NOT provide step-by-step
+          instructions on how to perform extraction.
+        - >
+          Clearly differentiate between silicone-coated paper vs pure PTFE/FEP
+          (paper-backed vs all-plastic film; single-use vs reusable where true).
+
+    - id: "concentrate_and_flower_jars"
+      label: "Concentrate Jars & Extract Packaging"
+      primary_collections:
+        - url: "https://oilslickpad.com/collections/concentrate-jars"
+          label: "Concentrate Jars"
+        - url: "https://oilslickpad.com/collections/glass-jars-extract-packaging"
+          label: "Glass Jars / Extract Packaging"
+        - url: "https://oilslickpad.com/collections/extraction-materials-packaging"
+          label: "Extraction Materials & Packaging"
+        - url: "https://oilslickpad.com/collections/storage-packaging"
+          label: "Storage & Packaging" # concept: handle confirmed in GSC external links
+      description: >
+        These collections focus on glass jars and packaging for concentrates and
+        cannabis flower—heavy-bottom jars, CR and non-CR options, low-profile
+        jars, and packaging sets that show off the product while keeping it
+        protected and compliant.
+      includes_products_like:
+        - "5ml child-resistant jar with black lids"
+        - "9ml child-resistant jar"
+        - "7ml low-profile heavy-bottom jars"
+        - "6ml jars with silicone lids"
+        - "Glass syringes with Luer Lock"
+        - "Custom printed stickers for jars"
+      key_keywords:
+        - "rosin jars"
+        - "concentrate jar"
+        - "glass concentrate containers"
+        - "child resistant jars"
+        - "heavy bottom jars"
+      llm_rules:
+        - >
+          Always call out capacity (in ml), closure type (CR / non-CR, screw-top,
+          no-neck, silicone lid), and best-suited product (rosin, sauce, crumble,
+          flower, etc.) without giving consumption instructions.
+        - >
+          For B2B/brand buyers, emphasize compliance readiness, label space,
+          stackability, and how the jar works in retail displays.
+        - >
+          For jars linked from informational content like "best concentrate jar",
+          ensure descriptions speak directly to freshness, terpene protection,
+          and visibility.
+
+    - id: "mylar_and_flexible_packaging"
+      label: "Mylar Bags & Joint Tubes"
+      primary_collections:
+        - label: "Mylar Bags"
+          url_example: "https://oilslickpad.com/collections/mylar-bags" # check/confirm handle externally
+        - label: "Joint Tubes"
+          url_example: "https://oilslickpad.com/collections/joint-tubes" # check/confirm handle externally
+      description: >
+        Flexible packaging for flower and pre-rolls. Mylar-style bags, joint
+        tubes, smell-proof and child-resistant tubes, and related flexible
+        packaging.
+      includes_products_like:
+        - "Child-resistant mylar-style bags in multiple sizes"
+        - "Smell-proof joint tubes"
+      key_keywords:
+        - "mylar bags"
+        - "joint tubes"
+        - "smell-proof cannabis packaging"
+      llm_rules:
+        - "Highlight child resistance, smell control, freshness, and portability."
+        - "Avoid implying illegal transport; speak about 'on-the-go convenience' in legal contexts."
+
+    - id: "smoke_shop_products"
+      label: "Smoke Shop Products"
+      primary_collection_url: "https://oilslickpad.com/collections/smoke-shop-products"
+      description: >
+        Aggregated smokeshop catalog: silicone pipes and rigs, glass pipes and
+        spoons, vaporizers, rolling papers, grinders, dab pads, bangers, etc.
+      includes_products_like:
+        - "Silicone spoon pipes"
+        - "Silicone water pipes and bongs"
+        - "Silicone / glass hybrid pipes"
+        - "Silicone dab rigs"
+        - "Silicone nectar collectors"
+        - "Quartz bangers"
+        - "Ashtrays, torches, grinders"
+      key_keywords:
+        - "silicone bong"
+        - "silicone bongs"
+        - "silicone dab rig"
+        - "silicone dab rigs"
+        - "mason jar bong"
+        - "electric nectar collector"
+      llm_rules:
+        - >
+          Emphasize durability (unbreakable / less breakable than glass),
+          ease of cleaning, travel-friendliness, and compatibility with typical
+          smokeshop setups.
+        - >
+          Do not describe how to consume cannabis (no dosing, lighting, inhaling
+          instructions). Focus instead on features, materials, and maintenance.
+
+    - id: "silicone_pipes_and_smoking_devices"
+      label: "Silicone Smoking Devices"
+      key_collections:
+        - url: "https://oilslickpad.com/collections/silicone-pipes"
+          label: "Silicone Pipes"
+        - url: "https://oilslickpad.com/collections/silicone-smoking-devices/silicone"
+          label: "Silicone Bongs, Dab Rigs, Nectar Collectors"
+      description: >
+        Specialized silicone smoking hardware: bongs, dab rigs, spoon pipes,
+        nectar collectors, and themed silicone pieces with sub-collections
+        for titanium tip styles, animal styles, etc.
+      includes_products_like:
+        - "Best silicone bongs collection"
+        - "Animal-themed silicone pipes"
+        - "Titanium tip silicone nectar collectors"
+      key_keywords:
+        - "silicone bong"
+        - "best silicone bongs"
+        - "silicone dab rigs"
+        - "silicone nectar collectors"
+      llm_rules:
+        - >
+          Always specify material (platinum-cured vs generic silicone where
+          known), included components (bowls, downstems, tips), and key benefits
+          vs glass.
+        - >
+          Link logically to Silicone Pads / Dabbing for dab mats, and to
+          Accessories (bangers, carb caps, torches).
+
+    - id: "accessories"
+      label: "Accessories"
+      primary_collection_url: "https://oilslickpad.com/collections/accessories"
+      description: >
+        Supporting tools: grinders, ashtrays, bangers, carb caps, torches,
+        maybe lighters and small utility items used around smoking, dabbing,
+        and extraction.
+      includes_products_like:
+        - "Quartz bangers"
+        - "Carb caps"
+        - "Torches"
+        - "Grinders"
+        - "Ashtrays"
+      key_keywords:
+        - "bangers"
+        - "quartz banger"
+        - "dab tools"
+        - "weed grinder"
+      llm_rules:
+        - "Highlight compatibility: what rigs/pipes they work with, joint sizes if relevant."
+        - "Cross-link back to relevant hardware collections."
+
+    - id: "clearance"
+      label: "Clearance"
+      primary_collection_url: "https://oilslickpad.com/collections/clearance-2"
+      description: >
+        Discounted or end-of-line products across multiple categories.
+      llm_rules:
+        - "Make sure descriptions still clearly describe what the product does; do not rely only on price-based messaging."
+        - "Avoid creating new guarantees that might not apply to clearance items."
+
+  general_architecture_rules:
+    - >
+      When generating content for a product, ALWAYS anchor it primarily in the
+      most relevant pillar above, then link to 1–3 secondary pillars where it
+      naturally fits (e.g., a silicone jar with nonstick liner belongs to both
+      Extract Packaging and Nonstick).
+    - >
+      Do not invent new top-level pillars. Any new collection idea must be
+      represented as a subcollection or tag under the closest pillar.
+
+content_rules:
+  global:
+    structure_priority:
+      - "Clarity about what the product is and who it is for."
+      - "Outcome-focused benefits with concrete details."
+      - "Machine-readable specs and attributes."
+      - "Honest constraints and compatibility."
+      - "Supportive FAQs that map to common queries."
+    tone:
+      must:
+        - "Be friendly, knowledgeable, and confident."
+        - "Use second person ('you') when speaking to the buyer."
+        - "Use simple, direct sentences over jargon."
+      avoid:
+        - "Exaggerated or unverifiable claims."
+        - "Encouraging illegal activity or providing detailed instructions on drug production or use."
+  product_page:
+    required_sections:
+      - id: "overview"
+        label: "Overview"
+        description: >
+          1–3 paragraphs explaining what the product is, who it is for, and
+          what primary job it does in the customer's setup.
+        guidelines:
+          - "Mention brand (Oil Slick) and product name in the first sentence."
+          - "Mention primary pillar (e.g., 'nonstick silicone dab pad', 'concentrate jar', 'PTFE film')."
+          - "Include 1–2 key specs (size, capacity, material) early."
+      - id: "benefit_bullets"
+        label: "Key benefits"
+        description: "3–7 bullets describing outcomes and advantages."
+        bullet_pattern: >
+          Each bullet should pair a customer-facing outcome with the feature
+          that makes it possible (e.g., 'Keep every last dab recoverable with
+          a medical-grade nonstick surface that doesn't bond to sticky extracts.')."
+      - id: "specs"
+        label: "Specs & compatibility"
+        description: >
+          A structured list or table of specs: dimensions, capacity, material,
+          color/finish, pack sizes, CR status if applicable, fit (for caps,
+          lids, or rigs).
+        examples_of_fields:
+          - "Material (e.g., medical-grade silicone, borosilicate glass, PTFE, FEP, silicone-coated paper)."
+          - "Dimensions (inches & cm)."
+          - "Capacity (ml for jars, sheet sizes for papers/films)."
+          - "Pack sizes (1, 2-pack, 12 box, case of 48, etc.)."
+          - "Closure type (screw-top, CR, silicone lid)."
+          - "Intended use (e.g., 'dab pad / nonstick work surface', 'rosin parchment', 'concentrate jar')."
+      - id: "who_it_is_for"
+        label: "Who this is for"
+        description: >
+          Short section that names ideal users and use cases, plus who it is
+          not ideal for if relevant (e.g., not for extreme high-heat exposure).
+      - id: "how_to_use_high_level"
+        label: "How to use (high-level, non-instructional)"
+        description: >
+          2–5 paragraphs describing how the item fits into a workflow without
+          giving detailed instructions for producing or consuming controlled substances.
+        allowed_examples:
+          - "Place under your rig to catch drips and keep glass from sliding."
+          - "Line jars or trays to prevent concentrates from sticking."
+          - "Store rosin or concentrates in the jar and keep the lid tight for freshness."
+      - id: "care_and_maintenance"
+        label: "Care & maintenance"
+        description: >
+          Simple guidance on cleaning and caring for the product (e.g., wipe
+          with cloth, mild soap and water, avoid harsh abrasives, do not expose
+          silicone directly to red-hot metal).
+      - id: "limitations_and_warnings"
+        label: "Limitations & safety notes"
+        description: >
+          Honest limitations and safety cautions (e.g., 'not designed to hold
+          red-hot tools directly,' 'for legal markets and activities only').
+      - id: "faqs"
+        label: "Common Questions"
+        description: >
+          3–8 Q&A pairs based on search queries and actual customer concerns.
+        examples_of_questions:
+          - "What is this used for?"
+          - "Is it reusable?"
+          - "What is it made from?"
+          - "What size options are available?"
+          - "How many come in a pack?"
+          - "Is this child-resistant or compliant in my state?" (for packaging)
+          - "How do I clean it?" (answer with non-drug-specific cleaning steps)
+  collection_page:
+    goals:
+      - "Explain who the collection is for."
+      - "Explain what kinds of products it includes."
+      - "Clarify how the collection relates to the pillars and other collections."
+    structure:
+      - id: "collection_intro"
+        description: >
+          1–2 paragraphs that define the collection, main use cases and target
+          buyers.
+      - id: "subthemes"
+        description: >
+          Bulleted or short sections to highlight key subtypes (e.g., by size,
+          material, use case).
+      - id: "internal_links"
+        description: >
+          Link out to related collections (cross-category) and key informational
+          blog posts that help buyers decide.
+  blog_post_crosslinking:
+    guidelines:
+      - >
+        When a product clearly relates to an existing blog topic (e.g., silicone
+        bongs, mason jar bong, PTFE in cannabis, best concentrate jar), add a
+        short 'Learn more' or 'Deep dive' sentence in the description pointing
+        readers toward that topic (as long as the system allows linking).
+      - >
+        Use descriptive anchor text that reflects the actual search query:
+        'learn how to clean a silicone bong' (link to the cleaning article),
+        'read about PTFE in cannabis packaging' (link to the PTFE article),
+        etc.
+
+internal_linking:
+  priorities:
+    # This is conceptual guidance for the LLM. Implementation of actual URLs/handles happens in the integration layer.
+    - "Every product should clearly indicate its primary collection / pillar."
+    - "Every product should naturally name and conceptually link to 1–3 related collections or accessories."
+    - "High-authority products and collections (Slick® Pad, Oil Slickr Paper, Nonstick Pads, Concentrate Jars) should be referenced more often as examples or complements."
+  per_template:
+    product_page:
+      primary_links:
+        - "Link up to its main collection (e.g., 'See all silicone dab pads in the Dabbing collection')."
+      secondary_links:
+        - "Link sideways to complementary products: dab pads → rigs and accessories; jars → nonstick liners and stickers; PTFE/FEP → jars and packaging."
+        - "Suggestion: 2–4 conceptual internal links per product description is a good balance."
+      anchor_text_examples:
+        - "nonstick silicone dab pad"
+        - "rosin parchment paper"
+        - "heavy-bottom concentrate jars"
+        - "silicone bongs and rigs"
+        - "dab tools and quartz bangers"
+    collection_page:
+      internal_links:
+        - "Upward: from subcollections to main pillar pages (e.g., 'Parchement Papers' → 'PTFE FEP & Parchment Papers' pillar)."
+        - "Sideways: between sibling collections (e.g., 'Concentrate Jars' ↔ 'Glass Jars Extract Packaging')."
+        - "Downward: featured product rows for hero SKUs with particularly strong search or link signals."
+    blog_post:
+      internal_links:
+        - "From how-to and buying-guides into the relevant product and collection pages."
+        - "Use full-text anchors that reflect user queries, e.g., 'best silicone bongs', 'concentrate jar guide'."
+
+seo_semantics:
+  entities_and_concepts:
+    brand_entities:
+      - "Oil Slick"
+      - "Slick® Pad"
+      - "Oil Slickr Paper"
+      - "Oil Slickr Wrap"
+    product_family_entities:
+      - "nonstick silicone pads/mats"
+      - "rosin parchment"
+      - "PTFE film"
+      - "FEP film"
+      - "concentrate jars"
+      - "child-resistant jars"
+      - "silicone bongs"
+      - "silicone dab rigs"
+      - "nectar collectors"
+      - "quartz bangers"
+    semantic_clusters:
+      nonstick_cluster:
+        includes:
+          - "dab pad"
+          - "dab mat"
+          - "silicone mat"
+          - "nonstick silicone pad"
+          - "silicone release paper"
+          - "slick paper"
+      packaging_cluster:
+        includes:
+          - "rosin jars"
+          - "concentrate jars"
+          - "extract jars"
+          - "child resistant packaging"
+          - "mylar bags"
+          - "joint tubes"
+      smokeshop_cluster:
+        includes:
+          - "silicone bongs"
+          - "silicone water pipes"
+          - "silicone glass hybrids"
+          - "silicone dab rigs"
+          - "nectar collectors"
+          - "mason jar bong"
+  usage_rules:
+    - "Prefer natural phrases over forced exact-match keywords."
+    - "Include 1–2 entity-rich phrases per main section in long descriptions (Overview, Benefits, FAQs) as long as they read naturally."
+    - "Do not repeat the same phrase more than 3–4 times on a product page."
+
+safety_and_compliance:
+  constraints_for_llm:
+    drugs_and_extraction:
+      - >
+        Do NOT write step-by-step instructions for producing cannabis extracts
+        (rosin, BHO, solventless, etc.). You may mention that a product is used
+        for pressing, drying, or handling extracts, but leave extraction
+        methodologies to existing content and legal professionals.
+      - >
+        Do NOT recommend specific temperatures, pressures, solvent volumes, or
+        detailed processes. Stick to high-level language like 'for pressing
+        rosin' or 'for drying solventless extracts'.
+    consumption:
+      - >
+        Do NOT describe how to smoke, dab, or vape in procedural terms
+        (lighting, inhaling, dosing). You may explain what a device is and what
+        kind of consumer it is for.
+    legality:
+      - >
+        Avoid suggesting illegal activity. When referencing compliance, use
+        cautious language such as 'for licensed operators and legal markets
+        only' where appropriate.
+    health_claims:
+      - >
+        Do NOT make medical claims (e.g., curing, treating diseases). You may
+        speak generally about freshness, flavor, terpenes, and product
+        protection.
+  cleaning_and_care:
+    guidelines:
+      - "Use gentle, non-specific cleaning advice (e.g. 'warm water and mild soap')."
+      - "Do not recommend specific chemical solvents for drug-related residue removal."
+      - "For silicone, note that abrasive tools and red-hot metal should be avoided."
+
+llm_behavior:
+  expected_inputs:
+    description: >
+      The integration system should pass the LLM a structured payload for each
+      product or collection. The YAML below defines ideal fields. The LLM must
+      be robust if some are missing.
+    product_fields:
+      - "title"
+      - "handle"
+      - "product_type"
+      - "vendor"
+      - "tags"
+      - "primary_collection_url"
+      - "secondary_collection_urls"
+      - "material"
+      - "capacity_ml"
+      - "dimensions"
+      - "pack_sizes"
+      - "cr_status"
+      - "price_range"
+      - "is_clearance"
+      - "related_blog_topics"
+      - "pillar_id (optional override)"
+    collection_fields:
+      - "title"
+      - "handle"
+      - "pillar_id"
+      - "subcollection_type"
+      - "featured_product_handles"
+      - "related_blog_topics"
+  expected_outputs:
+    product_listing:
+      required:
+        - "title"
+        - "meta_title"
+        - "meta_description"
+        - "short_description"
+        - "long_description_html"
+        - "bullet_points"
+        - "spec_table"
+        - "faqs"
+      notes:
+        - "All output should be HTML-safe; headings can be <h2>/<h3>, lists as <ul>/<li>."
+        - "Do not hard-link URLs unless the integration provides specific ones; otherwise, describe link targets conceptually."
+    collection_copy:
+      required:
+        - "collection_intro_html"
+        - "subsection_html"
+        - "internal_link_recommendations"
+  style_examples:
+    product_title_pattern:
+      - "Oil Slick {Product Name} – {Primary Use / Key Trait}"
+      - "Oil Slick {Size}{Unit} {Type} {with/for} {Key Benefit}"
+    meta_title_pattern:
+      - "{Product Name} | Oil Slick {Category/Pillar}"
+    meta_description_pattern:
+      - >
+        "Shop {Product Name} from Oil Slick – {1–2 core benefits}, built for
+        {audience/use cases}. {Size/material highlights}. Fast shipping."
+  content_quality_checks:
+    - "Every description must answer: What is it? Who is it for? What problem does it solve?"
+    - "Every description must include at least one concrete spec (size, capacity, material)."
+    - "Every description must include at least one limitation or honest constraint."
+    - "Every description must avoid procedural instructions on extraction or consumption."
+    - "Every description must be internally consistent with the assigned pillar and collections."
