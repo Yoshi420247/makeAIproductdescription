@@ -136,7 +136,7 @@ Positioning: {brand.get('positioning', '').strip()}
 
     # Internal linking with actual URLs - this is critical
     context_parts.append("""
-# INTERNAL LINKING (REQUIRED - Add 2-4 links per description)
+# INTERNAL LINKING (REQUIRED - Add 3-5 links per description)
 
 ## Collection URLs to use:
 - Dab Pads & Mats: https://oilslickpad.com/collections/dabbing
@@ -152,28 +152,32 @@ Positioning: {brand.get('positioning', '').strip()}
 - Smoke Shop Products: https://oilslickpad.com/collections/smoke-shop-products
 - Silicone Pipes: https://oilslickpad.com/collections/silicone-pipes
 - Silicone Bongs & Rigs: https://oilslickpad.com/collections/silicone-smoking-devices
+- Nectar Collectors: https://oilslickpad.com/collections/nectar-collectors-straws
+- Dab Tools: https://oilslickpad.com/collections/dab-tools-dabbers
+- Carb Caps: https://oilslickpad.com/collections/carb-caps
 - Accessories: https://oilslickpad.com/collections/accessories
 - Clearance: https://oilslickpad.com/collections/clearance-2
 
 ## Linking Rules:
-1. ALWAYS add at least 2 internal links per product description
-2. Link to the product's primary collection in the intro or "Best for" section
-3. Link to 1-3 complementary collections where relevant
-4. Use natural anchor text like "silicone dab pads", "concentrate jars", "rosin parchment paper"
-5. Place links contextually within sentences, not as a list at the end
+1. Add 3-5 internal links per product description (not more)
+2. NEVER link to the same collection more than once per description
+3. Only ONE link per paragraph - don't stack multiple links in the same block of text
+4. Keep the opening paragraph (first 2-3 sentences) focused on the product itself - NO cross-links there
+5. Place links in: "Best for" section, "How to use" section, FAQ answers
+6. Use natural anchor text like "dab mat", "concentrate jars", "nectar collectors"
 
 ## Link Placement Examples:
-- Dab pad product: "Pair it with a <a href="https://oilslickpad.com/collections/silicone-smoking-devices">silicone dab rig</a> for a full nonstick setup."
-- Jar product: "Line with <a href="https://oilslickpad.com/collections/parchment-papers">Oil Slickr paper</a> for extra nonstick protection."
-- Rig product: "Grab a <a href="https://oilslickpad.com/collections/dabbing">dab mat</a> to keep your station clean and catch any drips."
-- Paper product: "Perfect for storing in <a href="https://oilslickpad.com/collections/concentrate-jars">concentrate jars</a>."
+- In "Best for": "Perfect for dabbers who already have a <a href="https://oilslickpad.com/collections/silicone-smoking-devices">silicone rig</a> setup."
+- In "How to use": "Set it on your <a href="https://oilslickpad.com/collections/dabbing">dab mat</a> to keep your station clean."
+- In FAQ: "Store unused portions in a <a href="https://oilslickpad.com/collections/concentrate-jars">concentrate jar</a> for freshness."
 
 ## Cross-linking by Product Type:
 - Dab pads/mats → link to: rigs, accessories, concentrate jars
 - Jars/packaging → link to: parchment papers, PTFE liners, dab pads
-- Silicone pipes/rigs → link to: dab pads, accessories, bangers
+- Silicone pipes/rigs → link to: dab pads, accessories, carb caps
 - Papers/PTFE → link to: jars, rosin extraction, storage
-- Accessories → link to: pipes, rigs, dab pads
+- Nectar collectors → link to: dab mats, concentrate jars, dab tools
+- Accessories/tools → link to: pipes, rigs, dab pads
 """)
 
     # Safety and compliance (critical)
@@ -327,26 +331,38 @@ Mix it up:
 
 # INTERNAL LINKING (REQUIRED)
 
-Every product description MUST include 2-4 internal links to related collections. This is critical for SEO.
+Every product description MUST include 3-5 internal links to related collections. This is critical for SEO.
+
+STRICT RULES:
+- NEVER link to the same collection more than once per description
+- Only ONE link per paragraph - don't stack multiple links together
+- Keep the opening paragraph (first 2-3 sentences) about the product only - NO links there
+- The opening should nail the "what / who / why" without cross-links
 
 How to add links:
 - Use HTML anchor tags: <a href="URL">anchor text</a>
 - Place links naturally within sentences, not as a standalone list
-- Use descriptive anchor text that matches search terms (e.g., "silicone dab pads", "concentrate jars")
-- Link to the product's primary collection AND 1-3 complementary collections
+- Use descriptive anchor text that matches search terms (e.g., "dab mat", "concentrate jars")
 
 Where to place links:
-- In the opening paragraph when mentioning related products
 - In the "Best for" or "Who it's for" section
+- In the "How to use" section
 - In FAQ answers when relevant
-- When suggesting complementary products
+- NOT in the opening paragraph
 
 Example link placements:
-- "Works great on any <a href="https://oilslickpad.com/collections/dabbing">dab mat</a> setup"
-- "Store your extracts in our <a href="https://oilslickpad.com/collections/concentrate-jars">concentrate jars</a>"
-- "Pairs perfectly with <a href="https://oilslickpad.com/collections/silicone-smoking-devices">silicone rigs</a>"
+- "Set it on your <a href="https://oilslickpad.com/collections/dabbing">dab mat</a> to keep things clean"
+- "Store your extracts in a <a href="https://oilslickpad.com/collections/concentrate-jars">concentrate jar</a>"
+- "Pairs well with any <a href="https://oilslickpad.com/collections/silicone-smoking-devices">silicone rig</a>"
 
 The Brand Context section below contains the full list of collection URLs to use.
+
+# CLEANING ADVICE
+
+Keep cleaning instructions short and generic:
+- "Let it cool, then wipe off residue. For deeper cleans, soak in isopropyl alcohol, rinse and dry before reuse."
+- Don't add extra steps or make it sound like a detailed how-to guide
+- Keep it safe and simple
 
 # RULES
 - 600-1000 words depending on product complexity (simple items can be shorter)
@@ -354,7 +370,8 @@ The Brand Context section below contains the full list of collection URLs to use
 - HTML tags: h2, h3, p, ul, ol, li, strong, em, table, tr, th, td, a (for internal links)
 - Dual units: "4.5 inches (114mm)"
 - No fluff padding — if you've said what needs saying, stop
-- MUST include 2-4 internal links using <a href="URL">anchor text</a> format
+- MUST include 3-5 internal links, each to a DIFFERENT collection, one per paragraph max
+- Keep opening paragraph link-free — focus on product only
 """
 
 
