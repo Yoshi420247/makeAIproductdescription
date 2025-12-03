@@ -65,8 +65,11 @@ PREVIEW_FILE = "preview_report.html"
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
 
 # Model configurations
-OPENAI_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for OpenAI
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5
+# GPT-5.1 is required for proper word count adherence (1200-1600 words)
+# GPT-5.1 supports both Chat Completions API and Batch API
+# Ref: https://platform.openai.com/docs/models/gpt-5.1
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.1-2025-11-13")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
@@ -412,6 +415,10 @@ def check_env():
         print(f"   Model: {CLAUDE_MODEL}")
     else:
         print(f"   Model: {OPENAI_MODEL}")
+        # Warn if not using GPT-5.1 (older models don't follow word count instructions well)
+        if "gpt-5.1" not in OPENAI_MODEL.lower():
+            print(f"   ⚠️  WARNING: GPT-5.1 is recommended for proper 1200-1600 word descriptions")
+            print(f"   ⚠️  Older models (gpt-4o, etc.) may produce shorter content")
 
 
 def get_shopify_products():
