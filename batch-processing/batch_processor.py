@@ -1219,7 +1219,16 @@ Return JSON only: {{"ai_body_html": "..."}}"""
         )
 
         if response.status_code == 200:
-            result = response.json()
+            try:
+                result = response.json()
+            except json.JSONDecodeError:
+                return {
+                    "product_id": product_id,
+                    "title": title,
+                    "body_html": "",
+                    "success": False,
+                    "error": f"Invalid JSON response from API: {response.text[:200]}"
+                }
             # Claude returns content as array of blocks
             content_blocks = result.get("content", [])
             content = ""
@@ -1227,6 +1236,28 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 if block.get("type") == "text":
                     content = block.get("text", "")
                     break
+
+            if not content:
+                return {
+                    "product_id": product_id,
+                    "title": title,
+                    "body_html": "",
+                    "success": False,
+                    "error": f"Empty response from Claude. Stop reason: {result.get('stop_reason')}"
+                }
+
+            # Claude may wrap JSON in markdown code blocks - extract it
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+
+            # Try to find JSON object if there's extra text
+            if not content.startswith("{"):
+                start_idx = content.find("{")
+                end_idx = content.rfind("}") + 1
+                if start_idx != -1 and end_idx > start_idx:
+                    content = content[start_idx:end_idx]
 
             # Parse the JSON response
             parsed = json.loads(content)
@@ -1248,8 +1279,11 @@ Return JSON only: {{"ai_body_html": "..."}}"""
             time.sleep(5)
             return process_single_product_claude(product, total_count)
         else:
-            error_data = response.json()
-            error_msg = error_data.get("error", {}).get("message", f"Status {response.status_code}")
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("error", {}).get("message", f"Status {response.status_code}")
+            except:
+                error_msg = f"Status {response.status_code}: {response.text[:200]}"
             return {
                 "product_id": product_id,
                 "title": title,
@@ -1257,13 +1291,22 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "success": False,
                 "error": error_msg
             }
+    except json.JSONDecodeError as e:
+        # Content wasn't empty but wasn't valid JSON
+        return {
+            "product_id": product_id,
+            "title": title,
+            "body_html": "",
+            "success": False,
+            "error": f"JSON parse error. Response preview: {content[:300] if 'content' in dir() else 'N/A'}"
+        }
     except Exception as e:
         return {
             "product_id": product_id,
             "title": title,
             "body_html": "",
             "success": False,
-            "error": str(e)
+            "error": f"{type(e).__name__}: {str(e)}"
         }
 
 
