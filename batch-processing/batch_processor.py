@@ -65,10 +65,11 @@ PREVIEW_FILE = "preview_report.html"
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
 
 # Model configurations
-# GPT-5.1 is required for proper word count adherence (1200-1600 words)
-# GPT-5.1 supports both Chat Completions API and Batch API
-# Ref: https://platform.openai.com/docs/models/gpt-5.1
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.1-2025-11-13")
+# BATCH API: Use gpt-4o (GPT-5.1 is NOT supported in OpenAI Batch API as of Dec 2025)
+# REALTIME API: Use gpt-5.1 for better instruction following
+# Ref: https://community.openai.com/t/batch-api-suddenly-fails-with-gpt-5-model/1343345
+OPENAI_BATCH_MODEL = os.environ.get("OPENAI_BATCH_MODEL", "gpt-4o")
+OPENAI_REALTIME_MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-5.1-2025-11-13")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
 # Thread-safe counter for progress
@@ -414,11 +415,8 @@ def check_env():
     if MODEL_PROVIDER == "claude":
         print(f"   Model: {CLAUDE_MODEL}")
     else:
-        print(f"   Model: {OPENAI_MODEL}")
-        # Warn if not using GPT-5.1 (older models don't follow word count instructions well)
-        if "gpt-5.1" not in OPENAI_MODEL.lower():
-            print(f"   ⚠️  WARNING: GPT-5.1 is recommended for proper 1200-1600 word descriptions")
-            print(f"   ⚠️  Older models (gpt-4o, etc.) may produce shorter content")
+        print(f"   Batch Model: {OPENAI_BATCH_MODEL} (GPT-5.1 not supported in Batch API)")
+        print(f"   Realtime Model: {OPENAI_REALTIME_MODEL}")
 
 
 def get_shopify_products():
@@ -543,7 +541,7 @@ def create_batch_request_openai(product):
         "method": "POST",
         "url": "/v1/chat/completions",
         "body": {
-            "model": OPENAI_MODEL,
+            "model": OPENAI_BATCH_MODEL,
             "response_format": {"type": "json_object"},
             "max_tokens": 16000,
             "messages": [
@@ -1332,7 +1330,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "Content-Type": "application/json"
             },
             json={
-                "model": OPENAI_MODEL,
+                "model": OPENAI_REALTIME_MODEL,
                 "response_format": {"type": "json_object"},
                 "max_completion_tokens": 16000,
                 "messages": [
@@ -1547,7 +1545,7 @@ def realtime_process():
         return
 
     total = len(products)
-    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_MODEL
+    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_REALTIME_MODEL
     provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
 
     print(f"\n🚀 STEP 2: Processing {total} products with {provider_name} (parallel)...")
