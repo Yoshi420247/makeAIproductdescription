@@ -418,8 +418,8 @@ content_rules:
           - "What is it made from?"
           - "What size options are available?"
           - "How many come in a pack?"
-          - "Is this child-resistant or compliant in my state?" (for packaging)
-          - "How do I clean it?" (answer with non-drug-specific cleaning steps)
+          - "Is this child-resistant or compliant in my state? (for packaging)"
+          - "How do I clean it? (answer with non-drug-specific cleaning steps)"
   collection_page:
     goals:
       - "Explain who the collection is for."
