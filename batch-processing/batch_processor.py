@@ -50,6 +50,9 @@ MIN_DESCRIPTION_LENGTH = int(os.environ.get("MIN_DESCRIPTION_LENGTH", "100"))
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 SAMPLE_COUNT = int(os.environ.get("SAMPLE_COUNT", "5"))
 
+# Auto-apply: Push to Shopify immediately as descriptions are generated
+AUTO_APPLY = os.environ.get("AUTO_APPLY", "false").lower() == "true"
+
 # Batch ID (can be passed directly via env var)
 BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
 
@@ -65,8 +68,12 @@ PREVIEW_FILE = "preview_report.html"
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
 
 # Model configurations
-OPENAI_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for OpenAI
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"  # Claude Sonnet 4.5
+# BATCH API: Use gpt-4o (GPT-5.1 is NOT supported in OpenAI Batch API as of Dec 2025)
+# REALTIME API: Use gpt-5.1 for better instruction following
+# Ref: https://community.openai.com/t/batch-api-suddenly-fails-with-gpt-5-model/1343345
+OPENAI_BATCH_MODEL = os.environ.get("OPENAI_BATCH_MODEL", "gpt-4o")
+OPENAI_REALTIME_MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-5.1-2025-11-13")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
@@ -411,7 +418,8 @@ def check_env():
     if MODEL_PROVIDER == "claude":
         print(f"   Model: {CLAUDE_MODEL}")
     else:
-        print(f"   Model: {OPENAI_MODEL}")
+        print(f"   Batch Model: {OPENAI_BATCH_MODEL} (GPT-5.1 not supported in Batch API)")
+        print(f"   Realtime Model: {OPENAI_REALTIME_MODEL}")
 
 
 def get_shopify_products():
@@ -536,7 +544,7 @@ def create_batch_request_openai(product):
         "method": "POST",
         "url": "/v1/chat/completions",
         "body": {
-            "model": OPENAI_MODEL,
+            "model": OPENAI_BATCH_MODEL,
             "response_format": {"type": "json_object"},
             "max_tokens": 16000,
             "messages": [
@@ -1560,7 +1568,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "Content-Type": "application/json"
             },
             json={
-                "model": OPENAI_MODEL,
+                "model": OPENAI_REALTIME_MODEL,
                 "response_format": {"type": "json_object"},
                 "max_completion_tokens": 16000,
                 "messages": [
@@ -1760,7 +1768,41 @@ def process_single_product(product, total_count):
         return process_single_product_openai(product, total_count)
 
 
-def realtime_process():
+def update_shopify_product(product_id, body_html):
+    """Update a single product's description on Shopify. Returns True on success."""
+    if DRY_RUN:
+        return True
+
+    if len(body_html) < 100:
+        return False
+
+    try:
+        url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/products/{product_id}.json"
+        headers = {"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN, "Content-Type": "application/json"}
+        payload = {"product": {"id": int(product_id), "body_html": body_html}}
+
+        response = requests.put(url, headers=headers, json=payload)
+        time.sleep(0.5)  # Shopify rate limit
+
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
+def process_and_apply_single_product(product, total_count):
+    """Process a single product and immediately push to Shopify."""
+    result = process_single_product(product, total_count)
+
+    if result["success"] and result["body_html"]:
+        shopify_success = update_shopify_product(result["product_id"], result["body_html"])
+        result["shopify_updated"] = shopify_success
+    else:
+        result["shopify_updated"] = False
+
+    return result
+
+
+def realtime_process(auto_apply=False):
     """Process all products using parallel real-time API calls."""
     global progress_count
     progress_count = 0
@@ -1775,28 +1817,45 @@ def realtime_process():
         return
 
     total = len(products)
-    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_MODEL
+    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_REALTIME_MODEL
     provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+
+    # Check if auto-apply is enabled (via parameter or env var)
+    do_auto_apply = auto_apply or AUTO_APPLY
 
     print(f"\n🚀 STEP 2: Processing {total} products with {provider_name} (parallel)...")
     print(f"   Model: {model_name}")
     print(f"   Workers: {MAX_WORKERS} concurrent requests")
+    if do_auto_apply:
+        print(f"   🔄 Auto-apply: ENABLED (pushing to Shopify as generated)")
+    else:
+        print(f"   Auto-apply: disabled (run 'apply' after to push to Shopify)")
     print(f"   Estimated time: {total * 3 / MAX_WORKERS / 60:.1f} minutes\n")
 
     results = []
     success_count = 0
     error_count = 0
+    shopify_updated_count = 0
+    shopify_failed_count = 0
 
     start_time = time.time()
 
+    # Choose the processing function based on auto-apply mode
+    process_fn = process_and_apply_single_product if do_auto_apply else process_single_product
+
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(process_single_product, p, total): p for p in products}
+        futures = {executor.submit(process_fn, p, total): p for p in products}
 
         for future in as_completed(futures):
             result = future.result()
             results.append(result)
             if result["success"]:
                 success_count += 1
+                if do_auto_apply:
+                    if result.get("shopify_updated"):
+                        shopify_updated_count += 1
+                    else:
+                        shopify_failed_count += 1
             else:
                 error_count += 1
                 if error_count <= 5:
@@ -1833,7 +1892,27 @@ def realtime_process():
     with open(PREVIEW_FILE, "w") as f:
         f.write(html)
 
-    print(f"""
+    if do_auto_apply:
+        print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║         ✅ REALTIME PROCESSING + SHOPIFY UPDATE COMPLETE         ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Provider:    {provider_name:<50} ║
+║  Model:       {model_name:<50} ║
+║  Products:    {total:<50} ║
+║  AI Success:  {success_count:<50} ║
+║  AI Failed:   {error_count:<50} ║
+║  Time:        {elapsed/60:.1f} minutes{' ':<43} ║
+╠══════════════════════════════════════════════════════════════════╣
+║  🛒 SHOPIFY UPDATES:                                             ║
+║  ✓ Updated:   {shopify_updated_count:<50} ║
+║  ✗ Failed:    {shopify_failed_count:<50} ║
+╠══════════════════════════════════════════════════════════════════╣
+║  📄 Preview report: {PREVIEW_FILE:<44} ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+    else:
+        print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║              ✅ REALTIME PROCESSING COMPLETE                     ║
 ╠══════════════════════════════════════════════════════════════════╣
@@ -1922,7 +2001,7 @@ def apply_results():
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel Product Description Generator")
-    parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "apply"])
+    parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "realtime-live", "apply"])
     args = parser.parse_args()
 
     # Determine provider info for headers
@@ -1935,7 +2014,15 @@ def main():
 ║           Using {provider_name} Real-Time API (parallel){' '*(21-len(provider_name))}║
 ╚══════════════════════════════════════════════════════════════════╝
         """)
-        realtime_process()
+        realtime_process(auto_apply=False)
+    elif args.command == "realtime-live":
+        print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║        🚀 Parallel Product Description Generator                 ║
+║           Using {provider_name} Real-Time + Auto-Push to Shopify{' '*(14-len(provider_name))}║
+╚══════════════════════════════════════════════════════════════════╝
+        """)
+        realtime_process(auto_apply=True)
     elif args.command == "apply":
         print("""
 ╔══════════════════════════════════════════════════════════════════╗
