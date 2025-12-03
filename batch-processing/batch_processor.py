@@ -536,7 +536,7 @@ def create_batch_request_openai(product):
         "method": "POST",
         "url": "/v1/chat/completions",
         "body": {
-            "model": "gpt-4o",
+            "model": OPENAI_MODEL,
             "response_format": {"type": "json_object"},
             "max_tokens": 16000,
             "messages": [
