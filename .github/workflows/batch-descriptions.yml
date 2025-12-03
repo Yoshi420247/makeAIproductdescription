@@ -16,6 +16,15 @@ on:
           - realtime
           - apply
 
+      model_provider:
+        description: 'AI model to use'
+        required: true
+        default: 'claude'
+        type: choice
+        options:
+          - claude
+          - openai
+
       product_filter:
         description: 'Which products to process'
         required: true
@@ -105,8 +114,10 @@ jobs:
       - name: Run batch processor
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          MODEL_PROVIDER: ${{ github.event.inputs.model_provider }}
           PRODUCT_FILTER: ${{ github.event.inputs.product_filter }}
           FILTER_PRODUCT_TYPE: ${{ github.event.inputs.product_type }}
           FILTER_VENDOR: ${{ github.event.inputs.vendor }}

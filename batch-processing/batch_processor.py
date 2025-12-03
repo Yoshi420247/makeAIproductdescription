@@ -30,8 +30,12 @@ import threading
 
 # === CONFIGURATION ===
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE")
 SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN")
+
+# Model provider selection
+MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "claude").lower()  # "claude" or "openai"
 
 # Filter options
 PRODUCT_FILTER = os.environ.get("PRODUCT_FILTER", "all_active")
@@ -58,7 +62,10 @@ PREVIEW_FILE = "preview_report.html"
 
 # Parallel processing config
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
-REALTIME_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for realtime processing
+
+# Model configurations
+OPENAI_MODEL = "gpt-5.1-2025-11-13"  # GPT-5.1 for OpenAI
+CLAUDE_MODEL = "claude-sonnet-4-5-20250514"  # Claude Sonnet 4.5
 
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
@@ -181,8 +188,15 @@ Include related concepts, synonyms, and use cases so AI can match varied prompts
 def check_env():
     """Verify all required environment variables are set."""
     missing = []
-    if not OPENAI_API_KEY:
-        missing.append("OPENAI_API_KEY")
+
+    # Check API key based on provider
+    if MODEL_PROVIDER == "claude":
+        if not ANTHROPIC_API_KEY:
+            missing.append("ANTHROPIC_API_KEY")
+    else:
+        if not OPENAI_API_KEY:
+            missing.append("OPENAI_API_KEY")
+
     if not SHOPIFY_STORE:
         missing.append("SHOPIFY_STORE")
     if not SHOPIFY_ACCESS_TOKEN:
@@ -191,6 +205,12 @@ def check_env():
     if missing:
         print(f"❌ Missing environment variables: {', '.join(missing)}")
         exit(1)
+
+    print(f"🤖 Using model provider: {MODEL_PROVIDER.upper()}")
+    if MODEL_PROVIDER == "claude":
+        print(f"   Model: {CLAUDE_MODEL}")
+    else:
+        print(f"   Model: {OPENAI_MODEL}")
 
 
 def get_shopify_products():
@@ -274,8 +294,8 @@ def apply_filters(products):
     return filtered
 
 
-def create_batch_request(product):
-    """Create a single batch request for a product."""
+def build_product_prompt(product):
+    """Build the user prompt for a product (shared by all providers)."""
     title = product.get('title', 'Unknown Product')
     product_type = product.get('product_type', '')
     tags = product.get('tags', '')
@@ -292,7 +312,7 @@ def create_batch_request(product):
     variants_summary = [f"{v.get('title', '')}: ${v.get('price', '0')}" for v in variants[:5]]
     variants_str = "; ".join(variants_summary) if variants_summary else "Single variant"
 
-    user_content = f"""Write a product description for:
+    return f"""Write a product description for:
 
 Title: {title}
 Vendor: {vendor if vendor else 'Oil Slick'}
@@ -303,6 +323,11 @@ Variants: {variants_str}
 Current Description: {body_html if body_html else '(none)'}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
+
+
+def create_batch_request_openai(product):
+    """Create an OpenAI batch request for a product."""
+    user_content = build_product_prompt(product)
 
     return {
         "custom_id": str(product["id"]),
@@ -320,22 +345,39 @@ Return JSON only: {{"ai_body_html": "..."}}"""
     }
 
 
-def submit_batch():
-    """Create and submit a batch job to OpenAI."""
-    check_env()
-    print("\n📦 STEP 1: Fetching products from Shopify...")
-    products = get_shopify_products()
+def create_batch_request_claude(product):
+    """Create a Claude batch request for a product."""
+    user_content = build_product_prompt(product)
 
-    if not products:
-        print("❌ No products found matching your filters!")
-        return
+    return {
+        "custom_id": str(product["id"]),
+        "params": {
+            "model": CLAUDE_MODEL,
+            "max_tokens": 16000,
+            "system": SYSTEM_PROMPT,
+            "messages": [
+                {"role": "user", "content": user_content}
+            ]
+        }
+    }
 
+
+def create_batch_request(product):
+    """Create a batch request for a product using the selected provider."""
+    if MODEL_PROVIDER == "claude":
+        return create_batch_request_claude(product)
+    else:
+        return create_batch_request_openai(product)
+
+
+def submit_batch_openai(products):
+    """Submit a batch job to OpenAI."""
     print(f"\n📝 STEP 2: Creating batch file with {len(products)} requests...")
     with open(BATCH_FILE, "w") as f:
         for i, product in enumerate(products):
             if i % 50 == 0:
                 print(f"  Processing product {i+1}/{len(products)}...")
-            request = create_batch_request(product)
+            request = create_batch_request_openai(product)
             f.write(json.dumps(request) + "\n")
 
     file_size = os.path.getsize(BATCH_FILE) / 1024 / 1024
@@ -370,18 +412,67 @@ def submit_batch():
         print(response.text)
         exit(1)
 
-    batch_data = response.json()
-    batch_id = batch_data["id"]
+    return response.json()["id"]
+
+
+def submit_batch_claude(products):
+    """Submit a batch job to Claude (Anthropic Message Batches API)."""
+    print(f"\n📝 STEP 2: Creating batch requests for {len(products)} products...")
+
+    requests_list = []
+    for i, product in enumerate(products):
+        if i % 50 == 0:
+            print(f"  Processing product {i+1}/{len(products)}...")
+        requests_list.append(create_batch_request_claude(product))
+
+    print(f"✓ Created {len(requests_list)} requests")
+
+    print("\n🚀 STEP 3: Submitting batch to Claude...")
+    response = requests.post(
+        "https://api.anthropic.com/v1/messages/batches",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        },
+        json={"requests": requests_list}
+    )
+
+    if response.status_code not in [200, 201]:
+        print(f"❌ Failed to create batch: {response.status_code}")
+        print(response.text)
+        exit(1)
+
+    return response.json()["id"]
+
+
+def submit_batch():
+    """Create and submit a batch job."""
+    check_env()
+    print("\n📦 STEP 1: Fetching products from Shopify...")
+    products = get_shopify_products()
+
+    if not products:
+        print("❌ No products found matching your filters!")
+        return
+
+    provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+
+    if MODEL_PROVIDER == "claude":
+        batch_id = submit_batch_claude(products)
+        estimated_cost = len(products) * 0.015  # Claude batch is ~50% cheaper
+    else:
+        batch_id = submit_batch_openai(products)
+        estimated_cost = len(products) * 0.025
 
     with open(BATCH_ID_FILE, "w") as f:
         f.write(batch_id)
-
-    estimated_cost = len(products) * 0.025
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║                      ✅ BATCH SUBMITTED                          ║
 ╠══════════════════════════════════════════════════════════════════╣
+║  Provider:      {provider_name:<48} ║
 ║  Batch ID:      {batch_id:<48} ║
 ║  Products:      {len(products):<48} ║
 ║  Filter:        {PRODUCT_FILTER:<48} ║
@@ -396,17 +487,13 @@ def submit_batch():
     print(f"BATCH_ID: {batch_id}")
 
 
-def check_status():
-    """Check the status of the current batch job."""
-    check_env()
+def is_claude_batch(batch_id):
+    """Check if a batch ID is from Claude (starts with msgbatch_)."""
+    return batch_id.startswith("msgbatch_")
 
-    batch_id = get_batch_id()
-    if not batch_id:
-        print("❌ No batch ID found. Provide batch_id input or run 'submit' first.")
-        return None
 
-    print(f"🔍 Checking batch: {batch_id}")
-
+def check_status_openai(batch_id):
+    """Check OpenAI batch status."""
     response = requests.get(
         f"https://api.openai.com/v1/batches/{batch_id}",
         headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}
@@ -418,30 +505,101 @@ def check_status():
 
     batch = response.json()
     counts = batch.get("request_counts", {})
-    total = counts.get("total", 0)
-    completed = counts.get("completed", 0)
-    failed = counts.get("failed", 0)
+    return {
+        "status": batch.get("status"),
+        "total": counts.get("total", 0),
+        "completed": counts.get("completed", 0),
+        "failed": counts.get("failed", 0),
+        "output_file_id": batch.get("output_file_id"),
+        "error_file_id": batch.get("error_file_id"),
+        "raw": batch
+    }
+
+
+def check_status_claude(batch_id):
+    """Check Claude batch status."""
+    response = requests.get(
+        f"https://api.anthropic.com/v1/messages/batches/{batch_id}",
+        headers={
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01"
+        }
+    )
+
+    if response.status_code != 200:
+        print(f"❌ Failed to get batch status: {response.status_code}")
+        return None
+
+    batch = response.json()
+    counts = batch.get("request_counts", {})
+
+    # Claude uses different status names
+    status_map = {
+        "in_progress": "in_progress",
+        "ended": "completed",
+        "canceling": "canceling",
+        "canceled": "canceled"
+    }
+
+    return {
+        "status": status_map.get(batch.get("processing_status"), batch.get("processing_status")),
+        "total": counts.get("processing", 0) + counts.get("succeeded", 0) + counts.get("errored", 0) + counts.get("canceled", 0) + counts.get("expired", 0),
+        "completed": counts.get("succeeded", 0),
+        "failed": counts.get("errored", 0) + counts.get("canceled", 0) + counts.get("expired", 0),
+        "results_url": batch.get("results_url"),
+        "raw": batch
+    }
+
+
+def check_status():
+    """Check the status of the current batch job."""
+    check_env()
+
+    batch_id = get_batch_id()
+    if not batch_id:
+        print("❌ No batch ID found. Provide batch_id input or run 'submit' first.")
+        return None
+
+    # Detect provider from batch ID format
+    is_claude = is_claude_batch(batch_id)
+    provider_name = "Claude" if is_claude else "OpenAI"
+
+    print(f"🔍 Checking {provider_name} batch: {batch_id}")
+
+    if is_claude:
+        batch_info = check_status_claude(batch_id)
+    else:
+        batch_info = check_status_openai(batch_id)
+
+    if not batch_info:
+        return None
+
+    total = batch_info["total"]
+    completed = batch_info["completed"]
+    failed = batch_info["failed"]
+    status = batch_info["status"]
     progress = (completed / total * 100) if total > 0 else 0
 
-    status_emoji = {"validating": "🔄", "in_progress": "⏳", "finalizing": "📦", "completed": "✅", "failed": "❌", "expired": "⚠️"}.get(batch.get("status", ""), "❓")
+    status_emoji = {"validating": "🔄", "in_progress": "⏳", "finalizing": "📦", "completed": "✅", "ended": "✅", "failed": "❌", "expired": "⚠️", "canceled": "⛔"}.get(status, "❓")
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║                       BATCH STATUS                               ║
 ╠══════════════════════════════════════════════════════════════════╣
+║  Provider:    {provider_name:<50} ║
 ║  Batch ID:    {batch_id:<50} ║
-║  Status:      {status_emoji} {batch.get('status', 'unknown'):<48} ║
+║  Status:      {status_emoji} {status:<48} ║
 ║  Progress:    {completed}/{total} ({progress:.1f}% complete){' ':<27} ║
 ║  Failed:      {failed:<50} ║""")
 
-    if batch.get("status") == "completed":
+    if status in ["completed", "ended"]:
         print(f"""╠══════════════════════════════════════════════════════════════════╣
 ║  ✅ READY!                                                        ║
 ║  → Run 'preview' to see samples before applying                  ║
 ║  → Run 'download' to apply all to Shopify                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
-    elif batch.get("status") == "in_progress":
+    elif status == "in_progress":
         print(f"""╠══════════════════════════════════════════════════════════════════╣
 ║  ⏳ Still processing... Check again in a few minutes.            ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -450,7 +608,7 @@ def check_status():
         print(f"""╚══════════════════════════════════════════════════════════════════╝
 """)
 
-    return batch
+    return batch_info
 
 
 def generate_preview_html(results, sample_count=5):
@@ -926,14 +1084,14 @@ def download_and_apply():
 """)
 
 
-def process_single_product(product, total_count):
-    """Process a single product using real-time GPT-5.1 API."""
+def process_single_product_openai(product, total_count):
+    """Process a single product using OpenAI GPT-5.1 API."""
     global progress_count
 
     product_id = str(product["id"])
     title = product.get("title", "Unknown")
 
-    # Build the prompt (same as batch)
+    # Build the prompt
     body_html = product.get("body_html", "") or ""
     tags = product.get("tags", "") or ""
     product_type = product.get("product_type", "") or ""
@@ -962,7 +1120,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "Content-Type": "application/json"
             },
             json={
-                "model": REALTIME_MODEL,
+                "model": OPENAI_MODEL,
                 "response_format": {"type": "json_object"},
                 "max_completion_tokens": 16000,
                 "messages": [
@@ -992,9 +1150,8 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "error": None
             }
         elif response.status_code == 429:
-            # Rate limited - wait and retry
             time.sleep(5)
-            return process_single_product(product, total_count)
+            return process_single_product_openai(product, total_count)
         else:
             error_msg = response.json().get("error", {}).get("message", f"Status {response.status_code}")
             return {
@@ -1014,8 +1171,112 @@ Return JSON only: {{"ai_body_html": "..."}}"""
         }
 
 
+def process_single_product_claude(product, total_count):
+    """Process a single product using Claude Sonnet 4.5 API."""
+    global progress_count
+
+    product_id = str(product["id"])
+    title = product.get("title", "Unknown")
+
+    # Build the prompt
+    body_html = product.get("body_html", "") or ""
+    tags = product.get("tags", "") or ""
+    product_type = product.get("product_type", "") or ""
+    vendor = product.get("vendor", "") or ""
+
+    variants = product.get("variants", [])
+    variant_info = ""
+    if variants:
+        prices = [v.get("price", "0") for v in variants[:5]]
+        variant_info = f"Price range: ${min(prices)} - ${max(prices)}" if len(set(prices)) > 1 else f"Price: ${prices[0]}"
+
+    user_content = f"""Product: {title}
+Type: {product_type}
+Vendor: {vendor}
+Tags: {tags}
+{variant_info}
+Current Description: {body_html if body_html else '(none)'}
+
+Return JSON only: {{"ai_body_html": "..."}}"""
+
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": 16000,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": user_content}
+                ]
+            },
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            # Claude returns content as array of blocks
+            content_blocks = result.get("content", [])
+            content = ""
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    content = block.get("text", "")
+                    break
+
+            # Parse the JSON response
+            parsed = json.loads(content)
+            body_html = parsed.get("ai_body_html", "")
+
+            with progress_lock:
+                progress_count += 1
+                if progress_count % 10 == 0 or progress_count == total_count:
+                    print(f"  ✓ Progress: {progress_count}/{total_count} ({100*progress_count/total_count:.1f}%)")
+
+            return {
+                "product_id": product_id,
+                "title": title,
+                "body_html": body_html,
+                "success": True,
+                "error": None
+            }
+        elif response.status_code == 429:
+            time.sleep(5)
+            return process_single_product_claude(product, total_count)
+        else:
+            error_data = response.json()
+            error_msg = error_data.get("error", {}).get("message", f"Status {response.status_code}")
+            return {
+                "product_id": product_id,
+                "title": title,
+                "body_html": "",
+                "success": False,
+                "error": error_msg
+            }
+    except Exception as e:
+        return {
+            "product_id": product_id,
+            "title": title,
+            "body_html": "",
+            "success": False,
+            "error": str(e)
+        }
+
+
+def process_single_product(product, total_count):
+    """Process a single product using the selected AI provider."""
+    if MODEL_PROVIDER == "claude":
+        return process_single_product_claude(product, total_count)
+    else:
+        return process_single_product_openai(product, total_count)
+
+
 def realtime_process():
-    """Process all products using parallel real-time GPT-5.1 API calls."""
+    """Process all products using parallel real-time API calls."""
     global progress_count
     progress_count = 0
 
@@ -1029,8 +1290,11 @@ def realtime_process():
         return
 
     total = len(products)
-    print(f"\n🚀 STEP 2: Processing {total} products with GPT-5.1 (parallel)...")
-    print(f"   Model: {REALTIME_MODEL}")
+    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_MODEL
+    provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+
+    print(f"\n🚀 STEP 2: Processing {total} products with {provider_name} (parallel)...")
+    print(f"   Model: {model_name}")
     print(f"   Workers: {MAX_WORKERS} concurrent requests")
     print(f"   Estimated time: {total * 3 / MAX_WORKERS / 60:.1f} minutes\n")
 
@@ -1088,7 +1352,8 @@ def realtime_process():
 ╔══════════════════════════════════════════════════════════════════╗
 ║              ✅ REALTIME PROCESSING COMPLETE                     ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Model:       {REALTIME_MODEL:<50} ║
+║  Provider:    {provider_name:<50} ║
+║  Model:       {model_name:<50} ║
 ║  Products:    {total:<50} ║
 ║  Successful:  {success_count:<50} ║
 ║  Failed:      {error_count:<50} ║
@@ -1175,11 +1440,14 @@ def main():
     parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "apply"])
     args = parser.parse_args()
 
+    # Determine provider info for headers
+    provider_name = "Claude Sonnet 4.5" if MODEL_PROVIDER == "claude" else "GPT-5.1"
+
     if args.command == "realtime":
-        print("""
+        print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║        🚀 Parallel Product Description Generator                 ║
-║           Using GPT-5.1 Real-Time API (parallel)                 ║
+║           Using {provider_name} Real-Time API (parallel){' '*(21-len(provider_name))}║
 ╚══════════════════════════════════════════════════════════════════╝
         """)
         realtime_process()
