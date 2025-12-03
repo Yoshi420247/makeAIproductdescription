@@ -41,6 +41,8 @@ python batch_processor.py submit
 ### What happens:
 - Products are fetched from Shopify
 - A batch job is created with the AI provider
+- **The system verifies the batch actually started processing** (polls for ~30 seconds)
+- If the batch fails immediately, you'll see detailed error messages
 - A `batch_id.txt` file is saved with your batch ID
 - Cost estimate: ~$0.015-0.025 per product
 
@@ -182,6 +184,14 @@ PRODUCT_LIMIT=10 python batch_processor.py submit
 
 ## Troubleshooting
 
+**Batch finished in seconds / failed immediately?**
+- The system now automatically detects this and shows error details
+- Common causes:
+  - Invalid API key (check `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`)
+  - API quota exceeded
+  - Malformed requests (check product data)
+- The error output will tell you specifically what went wrong
+
 **Batch expired?**
 - OpenAI batches expire after 24 hours. Submit a new batch.
 
@@ -194,6 +204,10 @@ PRODUCT_LIMIT=10 python batch_processor.py submit
 
 **Descriptions too short?**
 - Descriptions under 100 characters are skipped automatically
+
+**Status shows "unknown" or errors?**
+- Run `status` again - it now shows detailed error information
+- The raw API response is displayed for debugging
 
 ---
 
