@@ -59,6 +59,9 @@ BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
 # Product limit (for testing)
 PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
 
+# Content source: "product_data" (raw Shopify data) or "existing_pdp" (rewrite existing description)
+CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "product_data").lower()
+
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
@@ -608,6 +611,10 @@ def check_env():
         print(f"   Batch Model: {OPENAI_BATCH_MODEL} (GPT-5.1 not supported in Batch API)")
         print(f"   Realtime Model: {OPENAI_REALTIME_MODEL}")
 
+    # Show content source mode
+    source_desc = "Existing PDP (rewrite mode)" if CONTENT_SOURCE == "existing_pdp" else "Product Data (write from scratch)"
+    print(f"📄 Content source: {source_desc}")
+
 
 def get_shopify_products():
     """Fetch products from Shopify based on filter settings."""
@@ -698,15 +705,52 @@ def build_product_prompt(product):
     body_html = product.get('body_html', '') or ''
     vendor = product.get('vendor', '')
 
-    if len(body_html) > 1000:
-        body_html = body_html[:1000] + "..."
-
     options = product.get('options', [])
     options_str = ", ".join([o.get('name', '') for o in options]) if options else "None"
 
     variants = product.get('variants', [])
     variants_summary = [f"{v.get('title', '')}: ${v.get('price', '0')}" for v in variants[:5]]
     variants_str = "; ".join(variants_summary) if variants_summary else "Single variant"
+
+    # MODE: existing_pdp - Use the existing description as the primary source
+    if CONTENT_SOURCE == "existing_pdp":
+        if not body_html or len(body_html.strip()) < 100:
+            # Fall back to product_data mode if no existing description
+            return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str)
+
+        return f"""REWRITE AND IMPROVE this existing product description.
+
+The existing description contains all the product details you need. Your job is to:
+1. Rewrite it using our brand voice and humanizer guidelines
+2. Expand thin sections and add proper FAQ (5-7 questions)
+3. Apply SEO hyperlinking strategy (2-5 internal links, 1-2 external)
+4. Fix any spelling errors, remove SKUs from body copy
+5. Replace any copyrighted character names with safe alternatives
+6. Optimize the title for SEO if needed
+
+PRODUCT METADATA:
+Title: {title}
+Vendor: {vendor if vendor else 'Oil Slick'}
+Type: {product_type}
+Tags: {tags}
+Options: {options_str}
+Variants: {variants_str}
+
+EXISTING DESCRIPTION TO REWRITE:
+{body_html}
+
+Return JSON only: {{"ai_body_html": "..."}}"""
+
+    # MODE: product_data - Write from scratch using raw product data
+    else:
+        return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html)
+
+
+def build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html=''):
+    """Build prompt from raw product data (original behavior)."""
+    # Truncate existing description if too long (just for reference)
+    if body_html and len(body_html) > 1000:
+        body_html = body_html[:1000] + "..."
 
     return f"""Write a product description for:
 
