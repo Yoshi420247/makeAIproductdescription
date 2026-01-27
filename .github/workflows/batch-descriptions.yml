@@ -94,6 +94,15 @@ on:
         type: string
         default: '0'
 
+      content_source:
+        description: 'Source for product info'
+        required: true
+        default: 'product_data'
+        type: choice
+        options:
+          - product_data
+          - existing_pdp
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
@@ -129,6 +138,7 @@ jobs:
           BATCH_ID: ${{ github.event.inputs.batch_id }}
           MAX_WORKERS: ${{ github.event.inputs.max_workers }}
           PRODUCT_LIMIT: ${{ github.event.inputs.limit }}
+          CONTENT_SOURCE: ${{ github.event.inputs.content_source }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 

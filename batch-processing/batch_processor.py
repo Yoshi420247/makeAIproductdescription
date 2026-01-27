@@ -59,6 +59,9 @@ BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
 # Product limit (for testing)
 PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
 
+# Content source: "product_data" (raw Shopify data) or "existing_pdp" (rewrite existing description)
+CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "product_data").lower()
+
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
 RESULTS_FILE = "batch_results.jsonl"
@@ -238,6 +241,56 @@ SYSTEM_PROMPT = """You are writing product descriptions for Oil Slick, a smoke s
 
 # OUTPUT FORMAT
 Return ONLY valid JSON: {"ai_body_html": "<p>...</p><h2>...</h2>..."}
+
+# SKU & REFERENCE NUMBERS (CRITICAL)
+Internal SKUs, part numbers, model codes, and reference numbers belong ONLY in structured data (specs table).
+- NEVER include SKUs in the opening paragraph, headings, or flowing body copy
+- NEVER start sentences with model numbers like "The XJ-4500 is..."
+- In specs table: "Model: XJ-4500" or "SKU: OS-PAD-001" is fine
+- In body copy: describe the product by what it IS, not its code
+- If the product title contains a model number, use it once in the opening, then refer to the product naturally
+
+# SPELLING & GRAMMAR CORRECTION
+Automatically fix obvious spelling mistakes from the source data:
+- Common typos: "silicone" not "silicon" (for the material), "banger" not "bangar", "quartz" not "quarts"
+- Product terms: "parchment" not "parchement", "concentrates" not "consentrates"
+- Cannabis terms: "terpenes" not "turpenes", "dabbing" not "dabbbing"
+- Do NOT flag or mention corrections — just fix them silently in your output
+
+# TITLE OPTIMIZATION FOR SEO
+When the product title needs improvement, optimize it for the niche:
+- Lead with the product type + key differentiator: "Silicone Dab Pad" not "Pad - Silicone"
+- Include size/capacity when relevant: "9ml Child-Resistant Concentrate Jar"
+- Use search-friendly terms: "Nectar Collector" not "Honey Straw Device"
+- Keep under 60 characters when possible for search display
+- Format: [Brand] [Product Type] [Key Feature] [Size/Variant]
+- Example: "Oil Slick Silicone Dab Mat - Large 12x12 inch"
+
+# COPYRIGHT & TRADEMARK COMPLIANCE (MANDATORY)
+Replace copyrighted character names with creative, legally-safe alternatives:
+
+STAR WARS:
+- "Grogu" / "Baby Yoda" → "Space Goblin", "Galaxy Gremlin", "Little Green Guy", "Cosmic Critter"
+- "Yoda" → "Wise Green Elder", "Swamp Sage", "Green Mystic"
+- "Darth Vader" → "Dark Lord", "Space Villain", "Galactic Enforcer"
+- "Stormtrooper" → "Space Trooper", "Galactic Soldier"
+- "Mandalorian" → "Armored Bounty Hunter", "Helmet Warrior"
+
+DISNEY/PIXAR:
+- "Mickey Mouse" → "Classic Mouse", "Cartoon Mouse"
+- "Stitch" → "Blue Alien Creature", "Alien Critter"
+
+ANIME/MANGA:
+- "Pikachu" / Pokemon → "Electric Critter", "Yellow Creature", "Pocket Monster style"
+- "Naruto" → "Ninja Style", "Shinobi Design"
+- "Dragon Ball" characters → "Anime Warrior", "Power Fighter"
+
+GENERAL RULES:
+- NEVER use trademarked names in the description body
+- Use descriptive alternatives that evoke the design without infringing
+- "Inspired by" or "style" language is safer than direct references
+- When in doubt, describe the visual (color, shape, expression) instead of the character
+- Example: "Grogu Pipe" → "Little Green Guy Silicone Pipe" with description mentioning "big-eared green creature design"
 
 # HUMANIZER: REMOVE AI WRITING PATTERNS
 Your writing must pass as human-written. Avoid these AI tells:
@@ -499,6 +552,23 @@ Keep cleaning instructions short and generic:
 - Honest tradeoffs acknowledged
 - No em dash overuse
 - No sycophantic phrases
+
+# DATA CLEANLINESS CHECKLIST (verify before output):
+- SKUs/model numbers: ONLY in specs table, never in body paragraphs or headings
+- Spelling: All obvious typos corrected (silicone, banger, quartz, parchment, terpenes)
+- No raw data artifacts (product codes, internal references, database IDs)
+
+# COPYRIGHT CHECKLIST (verify before output):
+- NO trademarked character names (Grogu, Yoda, Pikachu, Mickey, Stitch, etc.)
+- All character references replaced with creative alternatives
+- Design described by appearance, not by character name
+- "Inspired by" language used where applicable
+
+# TITLE OPTIMIZATION CHECKLIST:
+- Product type leads the title
+- Key differentiator included (material, size, feature)
+- Search-friendly terms used
+- Under 60 characters when possible
 """
 
 
@@ -540,6 +610,10 @@ def check_env():
     else:
         print(f"   Batch Model: {OPENAI_BATCH_MODEL} (GPT-5.1 not supported in Batch API)")
         print(f"   Realtime Model: {OPENAI_REALTIME_MODEL}")
+
+    # Show content source mode
+    source_desc = "Existing PDP (rewrite mode)" if CONTENT_SOURCE == "existing_pdp" else "Product Data (write from scratch)"
+    print(f"📄 Content source: {source_desc}")
 
 
 def get_shopify_products():
@@ -631,15 +705,52 @@ def build_product_prompt(product):
     body_html = product.get('body_html', '') or ''
     vendor = product.get('vendor', '')
 
-    if len(body_html) > 1000:
-        body_html = body_html[:1000] + "..."
-
     options = product.get('options', [])
     options_str = ", ".join([o.get('name', '') for o in options]) if options else "None"
 
     variants = product.get('variants', [])
     variants_summary = [f"{v.get('title', '')}: ${v.get('price', '0')}" for v in variants[:5]]
     variants_str = "; ".join(variants_summary) if variants_summary else "Single variant"
+
+    # MODE: existing_pdp - Use the existing description as the primary source
+    if CONTENT_SOURCE == "existing_pdp":
+        if not body_html or len(body_html.strip()) < 100:
+            # Fall back to product_data mode if no existing description
+            return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str)
+
+        return f"""REWRITE AND IMPROVE this existing product description.
+
+The existing description contains all the product details you need. Your job is to:
+1. Rewrite it using our brand voice and humanizer guidelines
+2. Expand thin sections and add proper FAQ (5-7 questions)
+3. Apply SEO hyperlinking strategy (2-5 internal links, 1-2 external)
+4. Fix any spelling errors, remove SKUs from body copy
+5. Replace any copyrighted character names with safe alternatives
+6. Optimize the title for SEO if needed
+
+PRODUCT METADATA:
+Title: {title}
+Vendor: {vendor if vendor else 'Oil Slick'}
+Type: {product_type}
+Tags: {tags}
+Options: {options_str}
+Variants: {variants_str}
+
+EXISTING DESCRIPTION TO REWRITE:
+{body_html}
+
+Return JSON only: {{"ai_body_html": "..."}}"""
+
+    # MODE: product_data - Write from scratch using raw product data
+    else:
+        return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html)
+
+
+def build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html=''):
+    """Build prompt from raw product data (original behavior)."""
+    # Truncate existing description if too long (just for reference)
+    if body_html and len(body_html) > 1000:
+        body_html = body_html[:1000] + "..."
 
     return f"""Write a product description for:
 
