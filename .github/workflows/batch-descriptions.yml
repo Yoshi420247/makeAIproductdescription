@@ -22,10 +22,11 @@ on:
       model_provider:
         description: 'AI model to use'
         required: true
-        default: 'claude'
+        default: 'claude-sonnet'
         type: choice
         options:
-          - claude
+          - claude-sonnet
+          - claude-opus
           - openai
 
       product_filter:
