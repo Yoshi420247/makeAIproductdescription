@@ -716,6 +716,79 @@ def get_shopify_products():
     return apply_filters(all_products)
 
 
+def extract_body_html(raw_content):
+    """Extract ai_body_html from an AI response, with robust fallbacks.
+
+    Handles:
+    - Clean JSON: {"ai_body_html": "..."}
+    - Markdown-wrapped JSON: ```json ... ```
+    - Truncated responses (max_tokens hit, no closing brace)
+    - Unescaped quotes inside HTML (inch marks like 12")
+
+    Returns (body_html, error) — error is None on success.
+    """
+    content = raw_content.strip()
+
+    # Step 1: Strip markdown code fences if present
+    if "```json" in content:
+        content = content.split("```json")[1].split("```")[0].strip()
+    elif "```" in content:
+        content = content.split("```")[1].split("```")[0].strip()
+
+    # Step 2: Isolate the JSON object
+    if not content.startswith("{"):
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start != -1 and end > start:
+            content = content[start:end]
+
+    # Step 3: Try standard JSON parse
+    try:
+        parsed = json.loads(content)
+        html = parsed.get("ai_body_html", "")
+        if html:
+            return html, None
+    except json.JSONDecodeError:
+        pass
+
+    # Step 4: Regex extraction — grab everything between the key and the end
+    # This handles truncated responses and unescaped quotes
+    match = re.search(
+        r'"ai_body_html"\s*:\s*"(.*)',
+        content,
+        re.DOTALL,
+    )
+    if match:
+        raw_value = match.group(1)
+
+        # Walk backwards to find the real end of the value string
+        # Look for "}  or "} at the end (with possible whitespace)
+        # If truncated, just take everything we have
+        end_match = re.search(r'"\s*\}\s*$', raw_value)
+        if end_match:
+            raw_value = raw_value[:end_match.start()]
+        else:
+            # Truncated response — strip trailing partial content
+            # Find the last complete HTML tag or sentence
+            last_close = raw_value.rfind(">")
+            if last_close > len(raw_value) * 0.5:
+                raw_value = raw_value[:last_close + 1]
+            else:
+                # Take what we have, strip any trailing incomplete escape
+                raw_value = raw_value.rstrip("\\")
+
+        # Unescape JSON string escapes
+        try:
+            html = raw_value.replace('\\"', '"').replace('\\n', '\n').replace('\\/', '/')
+        except Exception:
+            html = raw_value
+
+        if len(html) > 100:
+            return html, None
+
+    return "", "Could not extract ai_body_html from response"
+
+
 def _strip_html_tags(html):
     """Strip HTML tags for word counting."""
     return re.sub(r'<[^>]+>', ' ', html)
@@ -1989,8 +2062,17 @@ Return JSON only: {{"ai_body_html": "..."}}"""
         if response.status_code == 200:
             result = response.json()
             content = result["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
-            body_html = parsed.get("ai_body_html", "")
+
+            body_html, extract_err = extract_body_html(content)
+
+            if extract_err:
+                return {
+                    "product_id": product_id,
+                    "title": title,
+                    "body_html": "",
+                    "success": False,
+                    "error": f"{extract_err}. Preview: {content[:200]}"
+                }
 
             with progress_lock:
                 progress_count += 1
@@ -2103,22 +2185,17 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                     "error": f"Empty response from Claude. Stop reason: {result.get('stop_reason')}"
                 }
 
-            # Claude may wrap JSON in markdown code blocks - extract it
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
+            # Robust extraction handles malformed JSON, truncation, and unescaped quotes
+            body_html, extract_err = extract_body_html(content)
 
-            # Try to find JSON object if there's extra text
-            if not content.startswith("{"):
-                start_idx = content.find("{")
-                end_idx = content.rfind("}") + 1
-                if start_idx != -1 and end_idx > start_idx:
-                    content = content[start_idx:end_idx]
-
-            # Parse the JSON response
-            parsed = json.loads(content)
-            body_html = parsed.get("ai_body_html", "")
+            if extract_err:
+                return {
+                    "product_id": product_id,
+                    "title": title,
+                    "body_html": "",
+                    "success": False,
+                    "error": f"{extract_err}. Preview: {content[:200]}"
+                }
 
             with progress_lock:
                 progress_count += 1
@@ -2139,7 +2216,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
             try:
                 error_data = response.json()
                 error_msg = error_data.get("error", {}).get("message", f"Status {response.status_code}")
-            except:
+            except Exception:
                 error_msg = f"Status {response.status_code}: {response.text[:200]}"
             return {
                 "product_id": product_id,
@@ -2148,15 +2225,6 @@ Return JSON only: {{"ai_body_html": "..."}}"""
                 "success": False,
                 "error": error_msg
             }
-    except json.JSONDecodeError as e:
-        # Content wasn't empty but wasn't valid JSON
-        return {
-            "product_id": product_id,
-            "title": title,
-            "body_html": "",
-            "success": False,
-            "error": f"JSON parse error. Response preview: {content[:300] if 'content' in dir() else 'N/A'}"
-        }
     except Exception as e:
         return {
             "product_id": product_id,
