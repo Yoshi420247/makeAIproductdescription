@@ -277,6 +277,15 @@ Internal SKUs, part numbers, model codes, and reference numbers belong ONLY in s
 - In body copy: describe the product by what it IS, not its code
 - If the product title contains a model number, use it once in the opening, then refer to the product naturally
 
+# PRICING (NEVER INCLUDE)
+Hard prices, dollar amounts, and cost references must NEVER appear anywhere in the description.
+- NEVER include "$19.99", "$24.95", or any dollar amount
+- NEVER write "priced at", "costs", "only $X", "starting at $X"
+- NEVER include price in the specs table, FAQ answers, or any section
+- Prices change — hardcoded prices become wrong and damage trust
+- The Shopify product page already displays the current price
+- If the source data contains prices, IGNORE them in your output
+
 # SPELLING & GRAMMAR CORRECTION
 Automatically fix obvious spelling mistakes from the source data:
 - Common typos: "silicone" not "silicon" (for the material), "banger" not "bangar", "quartz" not "quarts"
@@ -584,6 +593,7 @@ Keep cleaning instructions short and generic:
 - SKUs/model numbers: ONLY in specs table, never in body paragraphs or headings
 - Spelling: All obvious typos corrected (silicone, banger, quartz, parchment, terpenes)
 - No raw data artifacts (product codes, internal references, database IDs)
+- NO prices anywhere ($X.XX, "costs", "priced at") — Shopify handles pricing
 
 # COPYRIGHT CHECKLIST (verify before output):
 - NO trademarked character names (Grogu, Yoda, Pikachu, Mickey, Stitch, etc.)
@@ -763,6 +773,18 @@ def is_pdp_optimized(body_html):
     if list_count >= 1:
         score += 1
         signals.append(f"{list_count} lists")
+
+    # Disqualifiers: violations that force a rewrite regardless of score
+    violations = []
+
+    # Price check: dollar amounts anywhere in the description
+    price_matches = re.findall(r'\$\d+(?:\.\d{2})?', text)
+    if price_matches:
+        violations.append(f"contains prices ({', '.join(price_matches[:3])})")
+
+    if violations:
+        reason = f"{word_count}w, score {score}/5 — VIOLATION: {'; '.join(violations)}"
+        return False, score, reason
 
     # Threshold: 3 out of 5 signals + word count gate = optimized
     is_optimized = score >= 3
