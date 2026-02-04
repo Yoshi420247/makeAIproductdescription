@@ -16,6 +16,8 @@ on:
           - realtime
           - realtime-live
           - apply
+          - rollback
+          - history
 
       model_provider:
         description: 'AI model to use'
@@ -103,6 +105,12 @@ on:
           - product_data
           - existing_pdp
 
+      run_id:
+        description: 'Supabase run ID (for apply/rollback - leave empty for latest)'
+        required: false
+        type: string
+        default: ''
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
@@ -139,6 +147,9 @@ jobs:
           MAX_WORKERS: ${{ github.event.inputs.max_workers }}
           PRODUCT_LIMIT: ${{ github.event.inputs.limit }}
           CONTENT_SOURCE: ${{ github.event.inputs.content_source }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 
