@@ -16,6 +16,8 @@ on:
           - realtime
           - realtime-live
           - apply
+          - rollback
+          - history
 
       model_provider:
         description: 'AI model to use'
@@ -64,6 +66,12 @@ on:
         type: boolean
         default: false
 
+      skip_optimized:
+        description: 'Auto-skip products that already have optimized PDPs'
+        required: false
+        type: boolean
+        default: true
+
       dry_run:
         description: 'Dry run - preview only, do NOT update Shopify'
         required: false
@@ -103,6 +111,12 @@ on:
           - product_data
           - existing_pdp
 
+      run_id:
+        description: 'Supabase run ID (for apply/rollback - leave empty for latest)'
+        required: false
+        type: string
+        default: ''
+
 jobs:
   batch-process:
     runs-on: ubuntu-latest
@@ -133,12 +147,16 @@ jobs:
           FILTER_VENDOR: ${{ github.event.inputs.vendor }}
           FILTER_TAG: ${{ github.event.inputs.tag }}
           INCLUDE_DRAFTS: ${{ github.event.inputs.include_drafts }}
+          SKIP_OPTIMIZED: ${{ github.event.inputs.skip_optimized }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
           BATCH_ID: ${{ github.event.inputs.batch_id }}
           MAX_WORKERS: ${{ github.event.inputs.max_workers }}
           PRODUCT_LIMIT: ${{ github.event.inputs.limit }}
           CONTENT_SOURCE: ${{ github.event.inputs.content_source }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           python batch-processing/batch_processor.py ${{ github.event.inputs.action }}
 

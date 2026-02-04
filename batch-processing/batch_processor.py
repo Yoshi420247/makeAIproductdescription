@@ -19,15 +19,19 @@ Environment Variables Required:
 
 import os
 import json
+import re
 import time
 import argparse
 import requests
 import yaml
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import uuid
+
+import supabase_store as store
 
 # === CONFIGURATION ===
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -61,6 +65,12 @@ PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
 
 # Content source: "product_data" (raw Shopify data) or "existing_pdp" (rewrite existing description)
 CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "product_data").lower()
+
+# Skip already-optimized PDPs (auto-detect and skip products with quality descriptions)
+SKIP_OPTIMIZED = os.environ.get("SKIP_OPTIMIZED", "false").lower() == "true"
+
+# Supabase run ID (for apply/rollback targeting a specific run)
+TARGET_RUN_ID = os.environ.get("RUN_ID", "").strip()
 
 BATCH_FILE = "batch_requests.jsonl"
 BATCH_ID_FILE = "batch_id.txt"
@@ -615,6 +625,12 @@ def check_env():
     source_desc = "Existing PDP (rewrite mode)" if CONTENT_SOURCE == "existing_pdp" else "Product Data (write from scratch)"
     print(f"📄 Content source: {source_desc}")
 
+    # Supabase status
+    if store.is_configured():
+        print(f"💾 Supabase: connected ({store.SUPABASE_URL[:40]}...)")
+    else:
+        print(f"💾 Supabase: not configured (results saved to local files only)")
+
 
 def get_shopify_products():
     """Fetch products from Shopify based on filter settings."""
@@ -669,6 +685,71 @@ def get_shopify_products():
     return apply_filters(all_products)
 
 
+def _strip_html_tags(html):
+    """Strip HTML tags for word counting."""
+    return re.sub(r'<[^>]+>', ' ', html)
+
+
+def is_pdp_optimized(body_html):
+    """Score a product description to determine if it's already optimized.
+
+    Uses fast heuristic checks (no AI calls) looking for structural
+    markers that match our system's output format.
+
+    Returns (is_optimized: bool, score: int, reason: str).
+    """
+    if not body_html:
+        return False, 0, "no description"
+
+    html = body_html.strip()
+    text = _strip_html_tags(html)
+    word_count = len(text.split())
+
+    # Gate: under 400 words is never considered optimized
+    if word_count < 400:
+        return False, 0, f"too short ({word_count} words)"
+
+    score = 0
+    signals = []
+
+    # 1. Structured headings (h2/h3 sections)
+    h2_count = len(re.findall(r'<h2[\s>]', html, re.IGNORECASE))
+    h3_count = len(re.findall(r'<h3[\s>]', html, re.IGNORECASE))
+    if h2_count >= 2:
+        score += 1
+        signals.append(f"{h2_count} h2 headings")
+
+    # 2. Internal links to oilslickpad.com collections
+    internal_links = re.findall(r'href=["\']https?://oilslickpad\.com/collections/', html, re.IGNORECASE)
+    if len(internal_links) >= 2:
+        score += 1
+        signals.append(f"{len(internal_links)} internal links")
+
+    # 3. FAQ section (questions in headings, or "FAQ" heading)
+    has_faq_heading = bool(re.search(r'<h[23][^>]*>.*?(FAQ|frequently|questions)', html, re.IGNORECASE))
+    question_headings = len(re.findall(r'<h3[^>]*>[^<]*\?', html, re.IGNORECASE))
+    if has_faq_heading or question_headings >= 3:
+        score += 1
+        signals.append(f"FAQ section ({question_headings} questions)")
+
+    # 4. Specs table
+    if '<table' in html.lower():
+        score += 1
+        signals.append("specs table")
+
+    # 5. Bullet lists (structured benefits/features)
+    list_count = len(re.findall(r'<[uo]l[\s>]', html, re.IGNORECASE))
+    if list_count >= 1:
+        score += 1
+        signals.append(f"{list_count} lists")
+
+    # Threshold: 3 out of 5 signals + word count gate = optimized
+    is_optimized = score >= 3
+    reason = f"{word_count}w, score {score}/5 ({', '.join(signals)})" if signals else f"{word_count}w, score 0/5"
+
+    return is_optimized, score, reason
+
+
 def apply_filters(products):
     """Apply additional filters."""
     filtered = products
@@ -688,6 +769,27 @@ def apply_filters(products):
 
     if not INCLUDE_DRAFTS and PRODUCT_FILTER != "all_products":
         filtered = [p for p in filtered if p.get("status") != "draft"]
+
+    # Skip already-optimized PDPs
+    if SKIP_OPTIMIZED:
+        before_count = len(filtered)
+        kept = []
+        skipped_examples = []
+        for p in filtered:
+            html = p.get("body_html") or ""
+            optimized, score, reason = is_pdp_optimized(html)
+            if optimized:
+                if len(skipped_examples) < 5:
+                    skipped_examples.append(f"    {p.get('title', '?')[:50]} ({reason})")
+            else:
+                kept.append(p)
+        skipped = before_count - len(kept)
+        filtered = kept
+        print(f"  ✓ Skip optimized: {skipped} already done, {len(filtered)} need work")
+        if skipped_examples:
+            print(f"  Skipped examples:")
+            for ex in skipped_examples:
+                print(ex)
 
     # Apply product limit (for testing)
     if PRODUCT_LIMIT > 0:
@@ -2040,6 +2142,9 @@ def realtime_process(auto_apply=False):
 
     check_env()
 
+    # Generate a unique run ID for this batch
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
+
     print(f"\n📦 STEP 1: Fetching products from Shopify...")
     products = get_shopify_products()
 
@@ -2050,6 +2155,21 @@ def realtime_process(auto_apply=False):
     total = len(products)
     model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_REALTIME_MODEL
     provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+
+    # Build a lookup of original descriptions for rollback tracking
+    original_html = {str(p["id"]): (p.get("body_html") or "") for p in products}
+
+    # Register run in Supabase
+    if store.is_configured():
+        store.create_run(
+            run_id=run_id,
+            model_provider=MODEL_PROVIDER,
+            model_name=model_name,
+            content_source=CONTENT_SOURCE,
+            product_filter=PRODUCT_FILTER,
+            total_products=total,
+        )
+        print(f"💾 Run ID: {run_id}")
 
     # Check if auto-apply is enabled (via parameter or env var)
     do_auto_apply = auto_apply or AUTO_APPLY
@@ -2112,8 +2232,42 @@ def realtime_process(auto_apply=False):
                 }
                 f.write(json.dumps(line) + "\n")
 
+    # Persist to Supabase
+    if store.is_configured():
+        print(f"\n💾 STEP 3: Saving {len(results)} results to Supabase...")
+        db_rows = []
+        for r in results:
+            pid = r["product_id"]
+            before = original_html.get(pid, "")
+            row = {
+                "run_id": run_id,
+                "shopify_product_id": int(pid),
+                "product_title": r.get("title", ""),
+                "body_html_before": before if before else None,
+                "body_html_after": r.get("body_html", ""),
+                "word_count": len(r.get("body_html", "").split()),
+                "status": "applied" if (do_auto_apply and r.get("shopify_updated")) else ("generated" if r["success"] else "error"),
+                "error_message": r.get("error"),
+            }
+            if do_auto_apply and r.get("shopify_updated"):
+                row["applied_at"] = datetime.now(timezone.utc).isoformat()
+            db_rows.append(row)
+
+        # Insert in batches of 500 to avoid payload limits
+        for i in range(0, len(db_rows), 500):
+            chunk = db_rows[i:i + 500]
+            store.save_descriptions_batch(chunk)
+
+        store.update_run(run_id,
+            succeeded=success_count,
+            failed=error_count,
+            status="applied" if do_auto_apply else "generated",
+        )
+        print(f"   ✓ Saved to Supabase (run: {run_id})")
+
     # Generate preview HTML
-    print(f"\n📄 STEP 3: Generating preview report...")
+    step_num = "4" if store.is_configured() else "3"
+    print(f"\n📄 STEP {step_num}: Generating preview report...")
     preview_results_data = []
     with open(RESULTS_FILE) as f:
         for line in f:
@@ -2123,11 +2277,14 @@ def realtime_process(auto_apply=False):
     with open(PREVIEW_FILE, "w") as f:
         f.write(html)
 
+    run_id_display = run_id[:30] + "..." if len(run_id) > 30 else run_id
+
     if do_auto_apply:
         print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║         ✅ REALTIME PROCESSING + SHOPIFY UPDATE COMPLETE         ║
 ╠══════════════════════════════════════════════════════════════════╣
+║  Run ID:      {run_id_display:<50} ║
 ║  Provider:    {provider_name:<50} ║
 ║  Model:       {model_name:<50} ║
 ║  Products:    {total:<50} ║
@@ -2140,6 +2297,8 @@ def realtime_process(auto_apply=False):
 ║  ✗ Failed:    {shopify_failed_count:<50} ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  📄 Preview report: {PREVIEW_FILE:<44} ║
+║  💾 Supabase:  results saved for rollback                        ║
+║  ↩️  To rollback: run_id={run_id_display:<38} ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
     else:
@@ -2147,6 +2306,7 @@ def realtime_process(auto_apply=False):
 ╔══════════════════════════════════════════════════════════════════╗
 ║              ✅ REALTIME PROCESSING COMPLETE                     ║
 ╠══════════════════════════════════════════════════════════════════╣
+║  Run ID:      {run_id_display:<50} ║
 ║  Provider:    {provider_name:<50} ║
 ║  Model:       {model_name:<50} ║
 ║  Products:    {total:<50} ║
@@ -2155,30 +2315,55 @@ def realtime_process(auto_apply=False):
 ║  Time:        {elapsed/60:.1f} minutes{' ':<43} ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  📄 Preview report: {PREVIEW_FILE:<44} ║
-║  📥 Download 'description-preview' artifact to review            ║
-║  ✅ Run 'apply' action to update Shopify                         ║
+║  💾 Supabase:  results saved                                     ║
+║  ✅ Run 'apply' with run_id to push to Shopify                   ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
 
+    print(f"RUN_ID: {run_id}")
+
 
 def apply_results():
-    """Apply saved results to Shopify (for realtime mode)."""
+    """Apply saved results to Shopify. Pulls from Supabase if no local file."""
     check_env()
 
-    if not Path(RESULTS_FILE).exists():
-        print("❌ No results file found. Run 'realtime' first.")
+    # Determine the run to apply
+    run_id = TARGET_RUN_ID
+    descriptions = []
+
+    # Strategy: try Supabase first, fall back to local file
+    if store.is_configured():
+        if not run_id:
+            run_id = store.get_latest_run_id()
+            if run_id:
+                print(f"💾 Using latest Supabase run: {run_id}")
+            else:
+                print("💾 No runs found in Supabase.")
+
+        if run_id:
+            descriptions = store.get_descriptions(run_id, status="generated")
+            if descriptions:
+                print(f"💾 Loaded {len(descriptions)} descriptions from Supabase")
+
+    # Fall back to local JSONL if Supabase had nothing
+    if not descriptions and Path(RESULTS_FILE).exists():
+        print(f"📄 Loading results from local file ({RESULTS_FILE})...")
+        with open(RESULTS_FILE) as f:
+            for line in f:
+                row = json.loads(line)
+                product_id = row.get("custom_id")
+                content = row.get("response", {}).get("body", {}).get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                parsed = json.loads(content)
+                descriptions.append({
+                    "shopify_product_id": int(product_id),
+                    "body_html_after": parsed.get("ai_body_html", ""),
+                })
+
+    if not descriptions:
+        print("❌ No results found. Run 'realtime' first, or provide a run_id.")
         return
 
-    results = []
-    with open(RESULTS_FILE) as f:
-        for line in f:
-            results.append(json.loads(line))
-
-    if not results:
-        print("❌ No results to apply.")
-        return
-
-    total = len(results)
+    total = len(descriptions)
     print(f"\n🔄 Applying {total} descriptions to Shopify...")
 
     if DRY_RUN:
@@ -2189,12 +2374,10 @@ def apply_results():
     error_count = 0
     skip_count = 0
 
-    for i, result in enumerate(results):
+    for i, desc in enumerate(descriptions):
         try:
-            product_id = result.get("custom_id")
-            content = result.get("response", {}).get("body", {}).get("choices", [{}])[0].get("message", {}).get("content", "{}")
-            parsed = json.loads(content)
-            body_html = parsed.get("ai_body_html", "")
+            product_id = str(desc["shopify_product_id"])
+            body_html = desc.get("body_html_after", "")
 
             if (i + 1) % 50 == 0:
                 print(f"  Processing {i+1}/{total}...")
@@ -2211,13 +2394,19 @@ def apply_results():
 
             if response.status_code == 200:
                 success_count += 1
+                if store.is_configured() and run_id:
+                    store.mark_applied(run_id, int(product_id))
             else:
                 error_count += 1
 
             time.sleep(0.5)  # Shopify rate limit
 
-        except Exception as e:
+        except Exception:
             error_count += 1
+
+    # Update run status in Supabase
+    if store.is_configured() and run_id:
+        store.update_run(run_id, status="applied", succeeded=success_count, failed=error_count)
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
@@ -2226,13 +2415,139 @@ def apply_results():
 ║  ✓ Successfully updated:  {success_count:<42} ║
 ║  ⚠️ Skipped (too short):   {skip_count:<42} ║
 ║  ✗ Errors:                {error_count:<42} ║
+╠══════════════════════════════════════════════════════════════════╣
+║  💾 Run ID:               {(run_id or 'local file'):<42} ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
 
 
+def rollback_run():
+    """Rollback a run: restore original descriptions to Shopify."""
+    if not store.is_configured():
+        print("❌ Supabase not configured. Rollback requires Supabase.")
+        print("   Set SUPABASE_URL and SUPABASE_KEY environment variables.")
+        return
+
+    check_env()
+
+    run_id = TARGET_RUN_ID
+    if not run_id:
+        run_id = store.get_latest_run_id()
+        if run_id:
+            print(f"💾 Rolling back latest run: {run_id}")
+        else:
+            print("❌ No runs found in Supabase. Provide a run_id.")
+            return
+
+    # Fetch applied descriptions that have a before snapshot
+    descriptions = store.get_descriptions(run_id, status="applied")
+    if not descriptions:
+        print(f"❌ No applied descriptions found for run {run_id}.")
+        return
+
+    rollback_candidates = [d for d in descriptions if d.get("body_html_before")]
+    if not rollback_candidates:
+        print(f"❌ No rollback data available (no before-snapshots stored).")
+        return
+
+    total = len(rollback_candidates)
+    print(f"\n↩️  Rolling back {total} products to their original descriptions...")
+
+    if DRY_RUN:
+        print("🔒 DRY RUN MODE - Not updating Shopify")
+        for d in rollback_candidates[:5]:
+            print(f"   Would restore: {d['product_title']} ({d['shopify_product_id']})")
+        return
+
+    success_count = 0
+    error_count = 0
+
+    for i, desc in enumerate(rollback_candidates):
+        try:
+            product_id = str(desc["shopify_product_id"])
+            original_html = desc["body_html_before"]
+
+            if (i + 1) % 50 == 0:
+                print(f"  Restoring {i+1}/{total}...")
+
+            url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/products/{product_id}.json"
+            headers = {"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN, "Content-Type": "application/json"}
+            payload = {"product": {"id": int(product_id), "body_html": original_html}}
+
+            response = requests.put(url, headers=headers, json=payload)
+
+            if response.status_code == 200:
+                success_count += 1
+                store.mark_rolled_back(run_id, int(product_id))
+            else:
+                error_count += 1
+
+            time.sleep(0.5)
+
+        except Exception:
+            error_count += 1
+
+    store.update_run(run_id, status="rolled_back")
+
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                     ↩️  ROLLBACK COMPLETE                         ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Run ID:              {run_id[:40]:<42} ║
+║  ✓ Restored:          {success_count:<42} ║
+║  ✗ Errors:            {error_count:<42} ║
+║  Products now have their original descriptions.                  ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+
+
+def show_history():
+    """Show recent batch runs from Supabase."""
+    if not store.is_configured():
+        print("❌ Supabase not configured. History requires Supabase.")
+        print("   Set SUPABASE_URL and SUPABASE_KEY environment variables.")
+        return
+
+    runs = store.list_runs(limit=10)
+
+    if not runs:
+        print("📋 No runs found in Supabase.")
+        return
+
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                     📋 RUN HISTORY                               ║
+╠══════════════════════════════════════════════════════════════════╣""")
+
+    for run in runs:
+        rid = run["run_id"][:30]
+        status = run["status"]
+        model = run.get("model_name", "?")[:20]
+        total = run.get("total_products", 0)
+        ok = run.get("succeeded", 0)
+        fail = run.get("failed", 0)
+        created = run.get("created_at", "")[:19]
+        source = run.get("content_source", "product_data")
+
+        status_icon = {
+            "generating": "⏳",
+            "generated": "📦",
+            "applied": "✅",
+            "rolled_back": "↩️ ",
+        }.get(status, "❓")
+
+        print(f"║  {status_icon} {rid:<31} {created}     ║")
+        print(f"║     {model:<22} {source:<15} {ok}/{total} ok  {status:<14} ║")
+        print(f"╠──────────────────────────────────────────────────────────────────╣")
+
+    print(f"╚══════════════════════════════════════════════════════════════════╝")
+    print(f"\n  To apply a run:   RUN_ID=<id> python batch_processor.py apply")
+    print(f"  To rollback:      RUN_ID=<id> python batch_processor.py rollback")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Parallel Product Description Generator")
-    parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "realtime-live", "apply"])
+    parser.add_argument("command", choices=["submit", "status", "preview", "download", "realtime", "realtime-live", "apply", "rollback", "history"])
     args = parser.parse_args()
 
     # Determine provider info for headers
@@ -2262,6 +2577,16 @@ def main():
 ╚══════════════════════════════════════════════════════════════════╝
         """)
         apply_results()
+    elif args.command == "rollback":
+        print("""
+╔══════════════════════════════════════════════════════════════════╗
+║        🚀 Parallel Product Description Generator                 ║
+║           ↩️  Rolling Back to Original Descriptions                ║
+╚══════════════════════════════════════════════════════════════════╝
+        """)
+        rollback_run()
+    elif args.command == "history":
+        show_history()
     else:
         print("""
 ╔══════════════════════════════════════════════════════════════════╗
