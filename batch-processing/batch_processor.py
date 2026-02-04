@@ -63,8 +63,17 @@ BATCH_ID_INPUT = os.environ.get("BATCH_ID", "").strip()
 # Product limit (for testing)
 PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
 
-# Content source: "product_data" (raw Shopify data) or "existing_pdp" (rewrite existing description)
-CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "product_data").lower()
+# Content source mode:
+#   "write_new"         - Write from scratch using raw Shopify data (title, tags, variants)
+#   "improve_existing"  - Rewrite/expand the existing product description
+#   "blend_both"        - Full product data + full existing description combined (max context)
+# Legacy values "product_data" and "existing_pdp" still work for backwards compatibility
+CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "write_new").lower()
+# Map legacy values
+if CONTENT_SOURCE == "product_data":
+    CONTENT_SOURCE = "write_new"
+elif CONTENT_SOURCE == "existing_pdp":
+    CONTENT_SOURCE = "improve_existing"
 
 # Skip already-optimized PDPs (auto-detect and skip products with quality descriptions)
 SKIP_OPTIMIZED = os.environ.get("SKIP_OPTIMIZED", "false").lower() == "true"
@@ -630,8 +639,12 @@ def check_env():
         print(f"   Realtime Model: {OPENAI_REALTIME_MODEL}")
 
     # Show content source mode
-    source_desc = "Existing PDP (rewrite mode)" if CONTENT_SOURCE == "existing_pdp" else "Product Data (write from scratch)"
-    print(f"📄 Content source: {source_desc}")
+    source_labels = {
+        "write_new": "Write New (from scratch using Shopify data)",
+        "improve_existing": "Improve Existing (rewrite current PDP)",
+        "blend_both": "Blend Both (product data + existing PDP combined)",
+    }
+    print(f"📄 Content source: {source_labels.get(CONTENT_SOURCE, CONTENT_SOURCE)}")
 
     # Supabase status
     if store.is_configured():
@@ -808,7 +821,13 @@ def apply_filters(products):
 
 
 def build_product_prompt(product):
-    """Build the user prompt for a product (shared by all providers)."""
+    """Build the user prompt for a product (shared by all providers).
+
+    Three modes controlled by CONTENT_SOURCE:
+      write_new        - From scratch using raw Shopify fields
+      improve_existing - Rewrite/expand the current PDP
+      blend_both       - Full product data + full existing PDP (max context)
+    """
     title = product.get('title', 'Unknown Product')
     product_type = product.get('product_type', '')
     tags = product.get('tags', '')
@@ -822,11 +841,20 @@ def build_product_prompt(product):
     variants_summary = [f"{v.get('title', '')}: ${v.get('price', '0')}" for v in variants[:5]]
     variants_str = "; ".join(variants_summary) if variants_summary else "Single variant"
 
-    # MODE: existing_pdp - Use the existing description as the primary source
-    if CONTENT_SOURCE == "existing_pdp":
-        if not body_html or len(body_html.strip()) < 100:
-            # Fall back to product_data mode if no existing description
-            return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str)
+    metadata_block = f"""Title: {title}
+Vendor: {vendor if vendor else 'Oil Slick'}
+Type: {product_type}
+Tags: {tags}
+Options: {options_str}
+Variants: {variants_str}"""
+
+    has_existing = body_html and len(body_html.strip()) >= 100
+
+    # --- MODE: improve_existing ---
+    if CONTENT_SOURCE == "improve_existing":
+        if not has_existing:
+            # Nothing to improve — fall back to write_new
+            return _prompt_write_new(metadata_block, body_html)
 
         return f"""REWRITE AND IMPROVE this existing product description.
 
@@ -839,37 +867,53 @@ The existing description contains all the product details you need. Your job is 
 6. Optimize the title for SEO if needed
 
 PRODUCT METADATA:
-Title: {title}
-Vendor: {vendor if vendor else 'Oil Slick'}
-Type: {product_type}
-Tags: {tags}
-Options: {options_str}
-Variants: {variants_str}
+{metadata_block}
 
 EXISTING DESCRIPTION TO REWRITE:
 {body_html}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
 
-    # MODE: product_data - Write from scratch using raw product data
-    else:
-        return build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html)
+    # --- MODE: blend_both ---
+    if CONTENT_SOURCE == "blend_both":
+        existing_section = body_html if has_existing else "(none)"
+
+        return f"""Write a comprehensive product description using ALL of the information below.
+
+You have two sources — use both. The product data gives you specs, pricing, and
+categorization. The existing description (if present) may contain additional details,
+use-case info, or context worth preserving and improving.
+
+Your job:
+1. Combine both sources into one polished description following our brand voice
+2. Don't just copy the existing description — improve it, expand thin sections
+3. Apply SEO hyperlinking strategy (2-5 internal links, 1-2 external)
+4. Add proper FAQ (5-7 questions), specs table, structured sections
+5. Fix spelling errors, remove SKUs from body copy
+6. Replace any copyrighted character names with safe alternatives
+7. If the existing description contradicts the product data, trust the product data
+
+SOURCE 1 — PRODUCT DATA:
+{metadata_block}
+
+SOURCE 2 — EXISTING DESCRIPTION:
+{existing_section}
+
+Return JSON only: {{"ai_body_html": "..."}}"""
+
+    # --- MODE: write_new (default) ---
+    return _prompt_write_new(metadata_block, body_html)
 
 
-def build_product_prompt_from_data(product, title, product_type, tags, vendor, options_str, variants_str, body_html=''):
-    """Build prompt from raw product data (original behavior)."""
-    # Truncate existing description if too long (just for reference)
+def _prompt_write_new(metadata_block, body_html=''):
+    """Build prompt for writing a description from scratch."""
+    # Include existing description as brief reference only
     if body_html and len(body_html) > 1000:
         body_html = body_html[:1000] + "..."
 
     return f"""Write a product description for:
 
-Title: {title}
-Vendor: {vendor if vendor else 'Oil Slick'}
-Type: {product_type}
-Tags: {tags}
-Options: {options_str}
-Variants: {variants_str}
+{metadata_block}
 Current Description: {body_html if body_html else '(none)'}
 
 Return JSON only: {{"ai_body_html": "..."}}"""
