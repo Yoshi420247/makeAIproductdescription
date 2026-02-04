@@ -104,13 +104,14 @@ on:
         default: '0'
 
       content_source:
-        description: 'Source for product info'
+        description: 'write_new = from scratch using Shopify data | improve_existing = rewrite current PDP | blend_both = full data + existing PDP combined'
         required: true
-        default: 'product_data'
+        default: 'write_new'
         type: choice
         options:
-          - product_data
-          - existing_pdp
+          - write_new
+          - improve_existing
+          - blend_both
 
       run_id:
         description: 'Supabase run ID (for apply/rollback - leave empty for latest)'
