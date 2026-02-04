@@ -19,6 +19,7 @@ Environment Variables Required:
 
 import os
 import json
+import re
 import time
 import argparse
 import requests
@@ -64,6 +65,9 @@ PRODUCT_LIMIT = int(os.environ.get("PRODUCT_LIMIT", "0"))
 
 # Content source: "product_data" (raw Shopify data) or "existing_pdp" (rewrite existing description)
 CONTENT_SOURCE = os.environ.get("CONTENT_SOURCE", "product_data").lower()
+
+# Skip already-optimized PDPs (auto-detect and skip products with quality descriptions)
+SKIP_OPTIMIZED = os.environ.get("SKIP_OPTIMIZED", "false").lower() == "true"
 
 # Supabase run ID (for apply/rollback targeting a specific run)
 TARGET_RUN_ID = os.environ.get("RUN_ID", "").strip()
@@ -681,6 +685,71 @@ def get_shopify_products():
     return apply_filters(all_products)
 
 
+def _strip_html_tags(html):
+    """Strip HTML tags for word counting."""
+    return re.sub(r'<[^>]+>', ' ', html)
+
+
+def is_pdp_optimized(body_html):
+    """Score a product description to determine if it's already optimized.
+
+    Uses fast heuristic checks (no AI calls) looking for structural
+    markers that match our system's output format.
+
+    Returns (is_optimized: bool, score: int, reason: str).
+    """
+    if not body_html:
+        return False, 0, "no description"
+
+    html = body_html.strip()
+    text = _strip_html_tags(html)
+    word_count = len(text.split())
+
+    # Gate: under 400 words is never considered optimized
+    if word_count < 400:
+        return False, 0, f"too short ({word_count} words)"
+
+    score = 0
+    signals = []
+
+    # 1. Structured headings (h2/h3 sections)
+    h2_count = len(re.findall(r'<h2[\s>]', html, re.IGNORECASE))
+    h3_count = len(re.findall(r'<h3[\s>]', html, re.IGNORECASE))
+    if h2_count >= 2:
+        score += 1
+        signals.append(f"{h2_count} h2 headings")
+
+    # 2. Internal links to oilslickpad.com collections
+    internal_links = re.findall(r'href=["\']https?://oilslickpad\.com/collections/', html, re.IGNORECASE)
+    if len(internal_links) >= 2:
+        score += 1
+        signals.append(f"{len(internal_links)} internal links")
+
+    # 3. FAQ section (questions in headings, or "FAQ" heading)
+    has_faq_heading = bool(re.search(r'<h[23][^>]*>.*?(FAQ|frequently|questions)', html, re.IGNORECASE))
+    question_headings = len(re.findall(r'<h3[^>]*>[^<]*\?', html, re.IGNORECASE))
+    if has_faq_heading or question_headings >= 3:
+        score += 1
+        signals.append(f"FAQ section ({question_headings} questions)")
+
+    # 4. Specs table
+    if '<table' in html.lower():
+        score += 1
+        signals.append("specs table")
+
+    # 5. Bullet lists (structured benefits/features)
+    list_count = len(re.findall(r'<[uo]l[\s>]', html, re.IGNORECASE))
+    if list_count >= 1:
+        score += 1
+        signals.append(f"{list_count} lists")
+
+    # Threshold: 3 out of 5 signals + word count gate = optimized
+    is_optimized = score >= 3
+    reason = f"{word_count}w, score {score}/5 ({', '.join(signals)})" if signals else f"{word_count}w, score 0/5"
+
+    return is_optimized, score, reason
+
+
 def apply_filters(products):
     """Apply additional filters."""
     filtered = products
@@ -700,6 +769,27 @@ def apply_filters(products):
 
     if not INCLUDE_DRAFTS and PRODUCT_FILTER != "all_products":
         filtered = [p for p in filtered if p.get("status") != "draft"]
+
+    # Skip already-optimized PDPs
+    if SKIP_OPTIMIZED:
+        before_count = len(filtered)
+        kept = []
+        skipped_examples = []
+        for p in filtered:
+            html = p.get("body_html") or ""
+            optimized, score, reason = is_pdp_optimized(html)
+            if optimized:
+                if len(skipped_examples) < 5:
+                    skipped_examples.append(f"    {p.get('title', '?')[:50]} ({reason})")
+            else:
+                kept.append(p)
+        skipped = before_count - len(kept)
+        filtered = kept
+        print(f"  ✓ Skip optimized: {skipped} already done, {len(filtered)} need work")
+        if skipped_examples:
+            print(f"  Skipped examples:")
+            for ex in skipped_examples:
+                print(ex)
 
     # Apply product limit (for testing)
     if PRODUCT_LIMIT > 0:

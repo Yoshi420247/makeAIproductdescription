@@ -66,6 +66,12 @@ on:
         type: boolean
         default: false
 
+      skip_optimized:
+        description: 'Auto-skip products that already have optimized PDPs'
+        required: false
+        type: boolean
+        default: true
+
       dry_run:
         description: 'Dry run - preview only, do NOT update Shopify'
         required: false
@@ -141,6 +147,7 @@ jobs:
           FILTER_VENDOR: ${{ github.event.inputs.vendor }}
           FILTER_TAG: ${{ github.event.inputs.tag }}
           INCLUDE_DRAFTS: ${{ github.event.inputs.include_drafts }}
+          SKIP_OPTIMIZED: ${{ github.event.inputs.skip_optimized }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           SAMPLE_COUNT: ${{ github.event.inputs.sample_count }}
           BATCH_ID: ${{ github.event.inputs.batch_id }}
