@@ -39,8 +39,8 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE")
 SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN")
 
-# Model provider selection
-MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "claude").lower()  # "claude" or "openai"
+# Model provider selection: "claude-sonnet", "claude-opus", "claude", or "openai"
+MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "claude-sonnet").lower()
 
 # Filter options
 PRODUCT_FILTER = os.environ.get("PRODUCT_FILTER", "all_active")
@@ -86,7 +86,15 @@ MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "20"))  # Concurrent requests
 # Ref: https://community.openai.com/t/batch-api-suddenly-fails-with-gpt-5-model/1343345
 OPENAI_BATCH_MODEL = os.environ.get("OPENAI_BATCH_MODEL", "gpt-4o")
 OPENAI_REALTIME_MODEL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-5.1-2025-11-13")
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+
+# Claude model mapping
+CLAUDE_MODELS = {
+    "claude-sonnet": "claude-sonnet-4-5-20250929",
+    "claude-opus": "claude-opus-4-5-20251101",
+    "claude": "claude-sonnet-4-5-20250929",  # legacy default
+}
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL") or CLAUDE_MODELS.get(MODEL_PROVIDER, "claude-sonnet-4-5-20250929")
+IS_CLAUDE = MODEL_PROVIDER.startswith("claude")
 
 # Thread-safe counter for progress
 progress_lock = threading.Lock()
@@ -595,7 +603,7 @@ def check_env():
     missing = []
 
     # Check API key based on provider
-    if MODEL_PROVIDER == "claude":
+    if IS_CLAUDE:
         if not ANTHROPIC_API_KEY:
             missing.append("ANTHROPIC_API_KEY")
     else:
@@ -615,7 +623,7 @@ def check_env():
     load_brand_guide()
 
     print(f"🤖 Using model provider: {MODEL_PROVIDER.upper()}")
-    if MODEL_PROVIDER == "claude":
+    if IS_CLAUDE:
         print(f"   Model: {CLAUDE_MODEL}")
     else:
         print(f"   Batch Model: {OPENAI_BATCH_MODEL} (GPT-5.1 not supported in Batch API)")
@@ -908,7 +916,7 @@ def create_batch_request_claude(product):
 
 def create_batch_request(product):
     """Create a batch request for a product using the selected provider."""
-    if MODEL_PROVIDER == "claude":
+    if IS_CLAUDE:
         return create_batch_request_claude(product)
     else:
         return create_batch_request_openai(product)
@@ -1198,9 +1206,9 @@ def submit_batch():
         print("❌ No products found matching your filters!")
         return
 
-    provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+    provider_name = "Claude" if IS_CLAUDE else "OpenAI"
 
-    if MODEL_PROVIDER == "claude":
+    if IS_CLAUDE:
         batch_id = submit_batch_claude(products)
         estimated_cost = len(products) * 0.015  # Claude batch is ~50% cheaper
     else:
@@ -2095,7 +2103,7 @@ Return JSON only: {{"ai_body_html": "..."}}"""
 
 def process_single_product(product, total_count):
     """Process a single product using the selected AI provider."""
-    if MODEL_PROVIDER == "claude":
+    if IS_CLAUDE:
         return process_single_product_claude(product, total_count)
     else:
         return process_single_product_openai(product, total_count)
@@ -2153,8 +2161,8 @@ def realtime_process(auto_apply=False):
         return
 
     total = len(products)
-    model_name = CLAUDE_MODEL if MODEL_PROVIDER == "claude" else OPENAI_REALTIME_MODEL
-    provider_name = "Claude" if MODEL_PROVIDER == "claude" else "OpenAI"
+    model_name = CLAUDE_MODEL if IS_CLAUDE else OPENAI_REALTIME_MODEL
+    provider_name = "Claude" if IS_CLAUDE else "OpenAI"
 
     # Build a lookup of original descriptions for rollback tracking
     original_html = {str(p["id"]): (p.get("body_html") or "") for p in products}
@@ -2551,7 +2559,7 @@ def main():
     args = parser.parse_args()
 
     # Determine provider info for headers
-    provider_name = "Claude Sonnet 4.5" if MODEL_PROVIDER == "claude" else "GPT-5.1"
+    provider_name = f"Claude ({CLAUDE_MODEL})" if IS_CLAUDE else "GPT-5.1"
 
     if args.command == "realtime":
         print(f"""
